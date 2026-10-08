@@ -299,3 +299,18 @@ async def test_deleted_training_state_is_pushed_as_an_explicit_reset(db: str, mo
     with pytest.raises(WebSocketDisconnect):
         await asyncio.wait_for(_poll_and_push(ws, asyncio.Lock(), db), timeout=1)
     assert ws.sent[-1]["training_state"] is None
+
+
+def test_auto_showcase_does_not_bypass_limit_after_stale_empty_queue_read(db: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    from keisei.showcase.runner import ShowcaseRunner
+
+    for _ in range(5):
+        queue_match(db, "1", "2", "normal")
+    # Another client can fill the queue after the runner's empty-queue read.
+    monkeypatch.setattr("keisei.showcase.runner.read_queue", lambda _: [])
+    runner = ShowcaseRunner(db, auto_showcase_interval=0)
+    try:
+        runner._maybe_auto_showcase()
+    except ValueError:
+        pass  # The competing client filled the queue first.
+    assert len(read_queue(db)) == 5

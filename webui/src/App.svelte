@@ -4,7 +4,7 @@
   import { games, selectedGame, selectedOpponent } from './stores/games.js'
   import { activeTab } from './stores/navigation.js'
   import { trainingState } from './stores/training.js'
-  import { leagueResults, learnerEntry } from './stores/league.js'
+  import { learnerEntry, learnerRecentRecord } from './stores/league.js'
   import { latestMetrics } from './stores/metrics.js'
   import StatusIndicator from './lib/StatusIndicator.svelte'
   import GameThumbnail from './lib/GameThumbnail.svelte'
@@ -111,13 +111,10 @@
       if (m.entropy != null) s.push(['Entropy', m.entropy.toFixed(4)])
       if (m.value_accuracy != null) s.push(['Value accuracy', (m.value_accuracy * 100).toFixed(1) + '%'])
     }
-    // W/L/D from recent league results (last 10 epochs)
-    if ($leagueResults.length > 0) {
-      const recent = $leagueResults.slice(0, 10)
-      const totals = recent.reduce((a, r) => ({
-        w: a.w + (r.wins || 0), l: a.l + (r.losses || 0), d: a.d + (r.draws || 0)
-      }), { w: 0, l: 0, d: 0 })
-      s.push(['Recent W/L/D', `${totals.w} / ${totals.l} / ${totals.d}`])
+    // Recent result feed, from the learner's participant perspective.
+    if ($learnerRecentRecord) {
+      const { w, l, d, rounds } = $learnerRecentRecord
+      s.push([`Recent W/L/D (${rounds} round${rounds === 1 ? '' : 's'})`, `${w} / ${l} / ${d}`])
     }
     return s
   })()
@@ -272,11 +269,13 @@
 
   .app {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto 1fr auto;
     height: 100dvh;
     overflow: hidden;
     background: var(--bg-primary);
   }
+  .app > :global(*) { min-width: 0; }
 
   .main-content {
     display: flex;
@@ -284,6 +283,7 @@
     align-items: stretch;
     overflow: hidden;
     min-height: 0;
+    min-width: 0;
     border-bottom: 1px solid var(--border);
   }
   .main-content:focus { outline: none; }
@@ -291,6 +291,7 @@
   .thumbnail-panel {
     flex: 0 0 auto;
     min-width: 280px;
+    max-width: 100%;
     border-right: 1px solid var(--border);
     padding: 8px;
     overflow: hidden;
@@ -335,6 +336,7 @@
     padding: 8px;
     overflow: hidden;
     min-height: 0;
+    min-width: 0;
   }
 
   .game-view {
@@ -409,8 +411,16 @@
 
   .metrics-panel { padding: 12px 16px; }
 
+  @media (max-width: 1800px) {
+    .main-content { flex-direction: column; overflow-y: auto; }
+    .main-content > * { flex-shrink: 0; }
+    .game-panel { overflow: visible; }
+    .game-view { height: auto; flex-wrap: wrap; }
+    .player-panel { width: 100%; flex-direction: row; }
+    .legend-area { max-width: 100%; }
+  }
+
   @media (max-width: 768px) {
-    .main-content { flex-direction: column; }
 
     .thumbnail-panel {
       width: 100%;
@@ -429,6 +439,7 @@
       border-right: none;
       border-bottom: 1px solid var(--border);
       justify-content: center;
+      flex-wrap: wrap;
     }
 
     .vs-separator { writing-mode: horizontal-tb; }

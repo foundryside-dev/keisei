@@ -4,14 +4,14 @@
  * Auto-reconnects on disconnect with exponential backoff.
  */
 
-import { writable } from 'svelte/store'
+import { writable, get } from 'svelte/store'
 import { games, selectedGameId } from '../stores/games.js'
 import { metrics, appendMetrics } from '../stores/metrics.js'
 import { trainingState } from '../stores/training.js'
 import {
   leagueEntries, leagueResults, eloHistory, tournamentStats, diffLeagueEntries,
   historicalLibrary, gauntletResults, leagueTransitions, styleProfilesRaw,
-  headToHeadRaw,
+  headToHeadRaw, leagueTotals, entryRecordsRaw, learnerRecentRecordRaw,
 } from '../stores/league.js'
 import {
   showcaseGame, showcaseMoves, showcaseQueue, sidecarAlive,
@@ -28,6 +28,18 @@ const DISCONNECT_GRACE_MS = 3000
 
 /** Connection state: 'connecting' | 'connected' | 'reconnecting' */
 export const connectionState = writable('connecting')
+export const showcaseCommandPending = writable(null)
+export const showcaseCommandFeedback = writable(null)
+
+let commandSequence = 0
+let commandTimer = null
+
+function finishCommand(kind, message) {
+  clearTimeout(commandTimer)
+  commandTimer = null
+  showcaseCommandPending.set(null)
+  showcaseCommandFeedback.set({ kind, message })
+}
 
 let ws = null
 let reconnectAttempt = 0
@@ -35,8 +47,23 @@ let reconnectTimer = null
 let reconnectingGraceTimer = null
 
 export function sendShowcaseCommand(message) {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(message))
+  if (get(showcaseCommandPending)) return false
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showcaseCommandFeedback.set({ kind: 'error', message: 'Not connected to the server. Reconnect before sending a match command.' })
+    return false
+  }
+  const command = { ...message, request_id: `${Date.now()}-${++commandSequence}` }
+  showcaseCommandPending.set(command)
+  showcaseCommandFeedback.set({ kind: 'pending', message: 'Waiting for the server to confirm…' })
+  commandTimer = setTimeout(() => {
+    finishCommand('error', 'No confirmation received. Check the match queue before trying again.')
+  }, 10000)
+  try {
+    ws.send(JSON.stringify(command))
+    return true
+  } catch {
+    finishCommand('error', 'The command could not be sent. Check the connection and try again.')
+    return false
   }
 }
 
@@ -65,6 +92,9 @@ export function connect() {
   }
 
   ws.onclose = () => {
+    if (get(showcaseCommandPending)) {
+      finishCommand('error', 'Connection lost before confirmation. Check the match queue after reconnecting.')
+    }
     console.log('[ws] disconnected, reconnecting...')
     if (reconnectingGraceTimer == null) {
       reconnectingGraceTimer = setTimeout(() => {
@@ -101,18 +131,24 @@ export function handleMessage(msg) {
       leagueEntries.set(msg.league_entries || [])
       diffLeagueEntries(msg.league_entries || [])
       leagueResults.set(msg.league_results || [])
+      leagueTotals.set(msg.league_totals ?? null)
+      entryRecordsRaw.set(msg.entry_records || [])
+      learnerRecentRecordRaw.set(msg.learner_recent_record ?? null)
       eloHistory.set(msg.elo_history || [])
       historicalLibrary.set(msg.historical_library || [])
       gauntletResults.set(msg.gauntlet_results || [])
       leagueTransitions.set(msg.transitions || [])
       headToHeadRaw.set(msg.head_to_head || [])
-      if (msg.tournament_stats) tournamentStats.set(msg.tournament_stats)
-      if (msg.style_profiles) styleProfilesRaw.set(msg.style_profiles)
+      tournamentStats.set(msg.tournament_stats ?? null)
+      styleProfilesRaw.set(msg.style_profiles || [])
       if (msg.games?.length > 0) {
         selectedGameId.update(id => id ?? 0)
       }
       // Showcase init (cold-start support)
       if (msg.showcase) {
+        if (get(showcaseGame)?.id !== msg.showcase.game?.id) {
+          resetShowcaseSelectionOnGameChange(msg.showcase.game?.id ?? null)
+        }
         showcaseGame.set(msg.showcase.game || null)
         showcaseMoves.set(msg.showcase.moves || [])
         showcaseQueue.set(msg.showcase.queue || [])
@@ -149,6 +185,14 @@ export function handleMessage(msg) {
       break
 
     case 'training_status':
+      if (Object.hasOwn(msg, 'training_state')) {
+        trainingState.set(msg.training_state === null ? null : {
+          ...msg.training_state,
+          ...(Object.hasOwn(msg, 'episodes') ? { episodes: msg.episodes } : {}),
+          ...(Object.hasOwn(msg, 'system_stats') ? { system_stats: msg.system_stats } : {}),
+        })
+        break
+      }
       trainingState.update(state => ({
         ...state,
         status: msg.status,
@@ -162,7 +206,7 @@ export function handleMessage(msg) {
         model_arch: msg.model_arch || state?.model_arch,
         total_epochs: msg.total_epochs ?? state?.total_epochs,
         system_stats: msg.system_stats || state?.system_stats,
-        learner_entry_id: msg.learner_entry_id ?? state?.learner_entry_id,
+        learner_entry_id: Object.hasOwn(msg, 'learner_entry_id') ? msg.learner_entry_id : state?.learner_entry_id,
       }))
       break
 
@@ -170,12 +214,15 @@ export function handleMessage(msg) {
       leagueEntries.set(msg.entries || [])
       diffLeagueEntries(msg.entries || [])
       leagueResults.set(msg.results || [])
+      leagueTotals.set(msg.league_totals ?? null)
+      entryRecordsRaw.set(msg.entry_records || [])
+      learnerRecentRecordRaw.set(msg.learner_recent_record ?? null)
       eloHistory.set(msg.elo_history || [])
       historicalLibrary.set(msg.historical_library || [])
       gauntletResults.set(msg.gauntlet_results || [])
       leagueTransitions.set(msg.transitions || [])
       headToHeadRaw.set(msg.head_to_head || [])
-      if (msg.tournament_stats) tournamentStats.set(msg.tournament_stats)
+      if (Object.hasOwn(msg, 'tournament_stats')) tournamentStats.set(msg.tournament_stats ?? null)
       if (msg.style_profiles) styleProfilesRaw.set(msg.style_profiles)
       break
 
@@ -199,24 +246,48 @@ export function handleMessage(msg) {
         return [...existing, ...fresh]
       })
       if (gameChanged) resetShowcaseSelectionOnGameChange(gameId)
-      // Moves only arrive when sidecar is actively playing
-      sidecarAlive.set(true)
+      // Persisted game metadata can arrive after the sidecar stops. Liveness
+      // is authoritative only in init/showcase_status heartbeat data.
       break
     }
 
     case 'showcase_status':
       showcaseQueue.set(msg.queue || [])
       sidecarAlive.set(msg.sidecar_alive || false)
-      // Clear game state when no active game (game ended or abandoned)
-      if (!msg.active_game_id) {
+      // Keep the completed result available until the next game replaces it.
+      // Only clear a stale in-progress board when the server reports no game.
+      if (!msg.active_game_id && get(showcaseGame)?.status === 'in_progress') {
         showcaseGame.set(null)
         showcaseMoves.set([])
         resetShowcaseSelectionOnGameChange(null)
       }
       break
 
+    case 'showcase_match_queued':
+    case 'showcase_speed_changed':
+    case 'showcase_match_cancelled': {
+      const pending = get(showcaseCommandPending)
+      if (!pending || pending.request_id !== msg.request_id) break
+      if (msg.type === 'showcase_speed_changed') {
+        showcaseQueue.update(queue => queue.map(q => q.id === msg.queue_id ? { ...q, speed: msg.speed } : q))
+        finishCommand('success', 'Playback speed updated.')
+      } else if (msg.type === 'showcase_match_cancelled') {
+        showcaseQueue.update(queue => queue.filter(q => q.id !== msg.queue_id))
+        finishCommand('success', 'Queued match cancelled.')
+      } else {
+        showcaseQueue.update(queue => queue.some(q => q.id === msg.queue_id) ? queue : [...queue, {
+          id: msg.queue_id, entry_id_1: msg.entry_id_1, entry_id_2: msg.entry_id_2,
+          speed: msg.speed, status: 'pending',
+        }])
+        finishCommand('success', 'Match added to the queue.')
+      }
+      break
+    }
+
     case 'showcase_error':
-      console.warn('[ws] showcase error:', msg.message)
+      if (get(showcaseCommandPending)?.request_id === msg.request_id) {
+        finishCommand('error', msg.error || 'The match command was rejected.')
+      }
       break
 
     case 'ping':
@@ -225,6 +296,7 @@ export function handleMessage(msg) {
 }
 
 export function disconnect() {
+  if (get(showcaseCommandPending)) finishCommand('error', 'Disconnected before confirmation. Check the match queue after reconnecting.')
   if (reconnectTimer != null) {
     clearTimeout(reconnectTimer)
     reconnectTimer = null
@@ -234,6 +306,10 @@ export function disconnect() {
     reconnectingGraceTimer = null
   }
   if (ws) {
+    ws.onclose = null
+    ws.onerror = null
+    ws.onmessage = null
+    ws.onopen = null
     ws.close()
     ws = null
   }

@@ -1,11 +1,11 @@
 <script>
-  import { leagueEntries, leagueResults, leagueStats, learnerEntry, tournamentStats, displayElo } from '../stores/league.js'
-  import { trainingState } from '../stores/training.js'
+  import { leagueStats, learnerEntry, tournamentStats, displayElo, leagueCapacity } from '../stores/league.js'
   import LeagueTable from './LeagueTable.svelte'
   import MatchupMatrix from './MatchupMatrix.svelte'
   import RecentMatches from './RecentMatches.svelte'
   import LeagueEventLog from './LeagueEventLog.svelte'
   import EntryDetail from './EntryDetail.svelte'
+  import HistoricalLibrary from './HistoricalLibrary.svelte'
   import { focusedEntryId } from '../stores/league.js'
   import { tick } from 'svelte'
 
@@ -13,9 +13,6 @@
   $: tStats = $tournamentStats
   $: learner = $learnerEntry
   $: learnerName = learner?.display_name || null
-
-  // Active pool = Frontier(5) + Recent(5) + Dynamic(10). Historical(5) are library entries, not pool members.
-  const POOL_CAPACITY = 20
 
   let entryDetailHeading
 
@@ -51,36 +48,40 @@
         <span class="stat-label">Top Rated · {Math.round(stats.topEntry ? displayElo(stats.topEntry).value : 0)}</span>
       </div>
       <div class="stat-card">
-        <span class="stat-value">{stats.poolSize} / {POOL_CAPACITY}</span>
+        <span class="stat-value">{stats.poolSize} / {$leagueCapacity.total}</span>
         <span class="stat-label">Pool Size</span>
       </div>
       <div class="stat-card stat-trio">
         <div class="trio-item">
-          <span class="stat-value">{stats.totalRounds}</span>
+          <span class="stat-value">{stats.totalRounds ?? '—'}</span>
           <span class="stat-label">Rounds</span>
         </div>
         <span class="trio-sep" aria-hidden="true"></span>
         <div class="trio-item">
-          <span class="stat-value">{stats.totalMatches}</span>
+          <span class="stat-value">{stats.totalMatches ?? '—'}</span>
           <span class="stat-label">Matches</span>
         </div>
         <span class="trio-sep" aria-hidden="true"></span>
         <div class="trio-item">
-          <span class="stat-value">{stats.totalGames}</span>
+          <span class="stat-value">{stats.totalGames ?? '—'}</span>
           <span class="stat-label">Games</span>
         </div>
       </div>
       <div class="stat-card">
-        <span class="stat-value">{stats.eloMin} – {stats.eloMax}</span>
-        <span class="stat-label">Elo Range · {stats.eloSpread} spread</span>
+        <span class="stat-value">{stats.eloMin ?? '—'} – {stats.eloMax ?? '—'}</span>
+        <span class="stat-label">Composite Elo · {stats.eloSpread ?? '—'} spread</span>
       </div>
       {#if tStats}
-        <div class="stat-card live">
-          <span class="stat-value">
-            <span class="live-dot" class:active={tStats.active_slots > 0} aria-hidden="true"></span>
-            {tStats.active_slots} <span class="live-unit">active</span>
-          </span>
-          <span class="stat-label">Live · {Math.round(tStats.games_per_min)} games/min</span>
+        <div class="stat-card completed-round">
+          <span class="stat-label">Last completed round</span>
+          <span class="stat-value">{Math.round(tStats.games_per_min)} <span class="round-unit">games/min</span></span>
+          <span class="stat-label">Capacity · {tStats.active_slots} concurrent slots</span>
+          {#if tStats.pairings_completed != null && tStats.pairings_requested != null}
+            <span class="stat-label">{tStats.pairings_completed}/{tStats.pairings_requested} pairings completed</span>
+          {/if}
+          {#if tStats.updated_at}
+            <time datetime={tStats.updated_at}>{new Date(tStats.updated_at).toLocaleString()}</time>
+          {/if}
         </div>
       {/if}
     </div>
@@ -89,8 +90,11 @@
   <div class="league-grid" class:has-detail={$focusedEntryId != null}>
     <div class="left-col">
       <div class="table-wrapper">
-        <LeagueTable />
+        <LeagueTable totalSlots={$leagueCapacity.total} roleCapacities={$leagueCapacity.roles} />
       </div>
+      <section class="historical-library-wrapper" aria-label="Historical benchmarks">
+        <HistoricalLibrary />
+      </section>
       {#if $focusedEntryId != null}
         <div class="entry-detail-wrapper" role="region" aria-label="Entry detail">
           <div class="detail-close-anchor">
@@ -101,7 +105,7 @@
       {/if}
     </div>
     <div class="right-col">
-      <MatchupMatrix {learnerName} />
+      <MatchupMatrix {learnerName} totalSlots={$leagueCapacity.total} />
     </div>
     <div class="bottom-right-split">
       <div class="event-log-wrapper">
@@ -128,12 +132,14 @@
 
   .stats-banner {
     display: flex;
+    flex-wrap: wrap;
     gap: 12px;
     flex-shrink: 0;
   }
 
   .stat-card {
     flex: 1;
+    min-width: 150px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -150,36 +156,12 @@
     background: rgba(200, 150, 46, 0.06);
   }
 
-  .stat-card.live {
+  .stat-card.completed-round {
     border-color: var(--accent-teal);
   }
+  .completed-round time { font-size: 11px; color: var(--text-muted); }
 
-  .live-dot {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--text-muted);
-    margin-right: 4px;
-    vertical-align: middle;
-  }
-
-  .live-dot.active {
-    background: var(--accent-teal);
-    box-shadow: 0 0 6px var(--accent-teal);
-    animation: live-pulse 1.6s ease-in-out infinite;
-  }
-
-  @keyframes live-pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .live-dot.active { animation: none; }
-  }
-
-  .live-unit {
+  .round-unit {
     font-size: 12px;
     font-weight: 600;
     color: var(--text-muted);
@@ -255,6 +237,16 @@
     flex: 1;
     min-height: 0;
     overflow: hidden;
+  }
+
+  .historical-library-wrapper {
+    flex: 0 1 auto;
+    max-height: 35%;
+    min-height: 100px;
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-secondary);
   }
 
   /* When detail is open, table shrinks to share space */
@@ -351,25 +343,45 @@
   }
 
   @media (max-width: 1200px) {
+    .league-view { height: auto; overflow-y: auto; }
     .league-grid {
-      grid-template-columns: 1fr;
+      flex: none;
+      height: auto;
+      grid-template-columns: minmax(0, 1fr);
       grid-template-rows: auto auto auto;
-      overflow-y: auto;
+      overflow: visible;
     }
+    .league-grid > *, .left-col > *, .bottom-right-split > * { min-width: 0; }
 
     .left-col {
       grid-column: 1;
       grid-row: 1;
+      overflow: visible;
     }
+    .table-wrapper, .has-detail .table-wrapper {
+      flex: none;
+      min-height: 260px;
+      max-height: 60vh;
+      overflow: auto;
+    }
+    .historical-library-wrapper { flex: none; max-height: 50vh; }
     .right-col {
       grid-column: 1;
       grid-row: 2;
+      overflow: visible;
     }
     .bottom-right-split {
       grid-column: 1;
       grid-row: 3;
-      grid-template-columns: 1fr;
+      grid-template-columns: minmax(0, 1fr);
       grid-template-rows: auto auto;
     }
+  }
+
+  @media (max-width: 600px) {
+    .league-view { padding: 10px; }
+    .stat-card, .stat-card.highlight { flex: 1 1 100%; min-width: 0; }
+    .stats-banner { gap: 8px; }
+    .league-grid, .bottom-right-split { overflow: visible; }
   }
 </style>

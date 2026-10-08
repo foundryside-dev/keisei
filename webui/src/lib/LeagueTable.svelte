@@ -1,12 +1,12 @@
 <script>
   import { tick } from 'svelte'
-  import { leagueRanked, entryWLD, eloDelta, focusedEntryId, leagueByRole, styleProfiles, displayElo } from '../stores/league.js'
+  import { leagueRanked, entryWLD, eloDelta, focusedEntryId, styleProfiles, displayElo } from '../stores/league.js'
   import { getRoleInfo } from './roleIcons.js'
 
   /** Total slots shown in leaderboard (empty ones are placeholders) */
   export let totalSlots = 20
 
-  const ROLE_CAPACITY = { frontier_static: 5, recent_fixed: 5, dynamic: 10, historical: 5 }
+  export let roleCapacities = { frontier_static: 5, recent_fixed: 5, dynamic: 10, historical: 5 }
   const ROLE_ORDER = ['frontier_static', 'recent_fixed', 'dynamic', 'historical', 'other']
   const ROLE_LABELS = {
     frontier_static: '🛡 Frontier',
@@ -51,9 +51,20 @@
       } else {
         av = a[sortColumn]; bv = b[sortColumn]
       }
+      if (av === bv) return a.rank - b.rank
       return sortAsc ? (av > bv ? 1 : -1) : (bv > av ? 1 : -1)
     })
-    return entries.map((e, i) => ({ ...e, rank: i + 1 }))
+    return entries
+  })()
+
+  $: sortedByRole = (() => {
+    const groups = new Map()
+    for (const entry of sorted) {
+      const role = ROLE_ORDER.includes(entry.role) ? entry.role : 'other'
+      if (!groups.has(role)) groups.set(role, [])
+      groups.get(role).push(entry)
+    }
+    return groups
   })()
 
   function toggleSort(col) {
@@ -122,7 +133,9 @@
     <button role="radio" aria-checked={viewMode === 'flat'} tabindex={viewMode === 'flat' ? 0 : -1} on:click={() => viewMode = 'flat'} on:keydown={handleViewToggleKeydown} class:active={viewMode === 'flat'}>Flat</button>
     <button role="radio" aria-checked={viewMode === 'grouped'} tabindex={viewMode === 'grouped' ? 0 : -1} on:click={() => viewMode = 'grouped'} on:keydown={handleViewToggleKeydown} class:active={viewMode === 'grouped'}>Grouped</button>
   </div>
-    <div class="table-scroll">
+    <!-- Keyboard focus enables horizontal scrolling of the complete data table. -->
+    <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
+    <div class="table-scroll" role="region" aria-label="Leaderboard table" tabindex="0">
       <table>
         <caption class="sr-only">Elo leaderboard, sorted by {sortColumn} {sortAsc ? 'ascending' : 'descending'}</caption>
         <colgroup>
@@ -172,14 +185,14 @@
         <tbody>
           {#if viewMode === 'grouped'}
             {#each ROLE_ORDER as role}
-              {#if $leagueByRole.has(role)}
+              {#if sortedByRole.has(role)}
                 <tr class="group-header">
                   <th colspan="11" class="group-heading" scope="colgroup">
                     <span aria-hidden="true">{ROLE_LABELS[role]?.split(' ')[0]}</span>
-                    {ROLE_LABELS[role]?.split(' ').slice(1).join(' ') || role} · {$leagueByRole.get(role).length}/{ROLE_CAPACITY[role] || '?'}
+                    {ROLE_LABELS[role]?.split(' ').slice(1).join(' ') || role} · {sortedByRole.get(role).length}/{roleCapacities[role] ?? '?'}
                   </th>
                 </tr>
-                {#each $leagueByRole.get(role) as entry}
+                {#each sortedByRole.get(role) as entry}
                   <tr
                     class:top={entry.rank === 1}
                     class:focused={$focusedEntryId === entry.id}
@@ -209,9 +222,9 @@
                     <td class="expand-chevron" aria-hidden="true">{$focusedEntryId === entry.id ? '▾' : '▸'}</td>
                   </tr>
                 {/each}
-                {#each Array(Math.max(0, (ROLE_CAPACITY[role] || 0) - ($leagueByRole.get(role)?.length || 0))) as _, i}
+                {#each Array(Math.max(0, (roleCapacities[role] || 0) - (sortedByRole.get(role)?.length || 0))) as _, i}
                   <tr class="placeholder-row" aria-hidden="true">
-                    <td class="num rank placeholder-text">{($leagueByRole.get(role)?.length || 0) + i + 1}</td>
+                    <td class="num rank placeholder-text">{(sortedByRole.get(role)?.length || 0) + i + 1}</td>
                     <td class="placeholder-text">—</td>
                     <td class="num placeholder-text">—</td>
                     <td class="num placeholder-text"></td>
@@ -288,6 +301,7 @@
 
 <style>
   .league-table-card {
+    min-width: 0;
     background: var(--bg-secondary);
     border: 1px solid var(--border);
     border-radius: 6px;
@@ -299,11 +313,11 @@
 
   .table-scroll {
     flex: 1;
-    overflow-y: auto;
+    overflow: auto;
     min-height: 0;
   }
 
-  table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 13px; }
+  table { width: 100%; min-width: 650px; table-layout: fixed; border-collapse: collapse; font-size: 13px; }
   thead { color: var(--text-muted); font-size: 13px; position: sticky; top: 0; background: var(--bg-secondary); z-index: 1; }
   th, td { text-align: left; padding: 6px 10px; }
   th.num, td.num { text-align: right; }

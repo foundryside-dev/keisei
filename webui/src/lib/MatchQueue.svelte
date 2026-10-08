@@ -1,7 +1,7 @@
 <script>
   import { showcaseQueue } from '../stores/showcase.js'
   import { leagueEntries } from '../stores/league.js'
-  import { sendShowcaseCommand } from './ws.js'
+  import { sendShowcaseCommand, showcaseCommandPending, connectionState } from './ws.js'
 
   // Resolve entry IDs (TEXT in showcase_queue) to display names. Falls back
   // to the raw ID when an entry has been retired or isn't yet loaded.
@@ -14,13 +14,13 @@
   })()
 
   let pendingCancelId = null
+  $: commandDisabled = !!$showcaseCommandPending || $connectionState !== 'connected'
 
   function requestCancel(queueId) {
     pendingCancelId = queueId
   }
   function confirmCancel(queueId) {
-    sendShowcaseCommand({ type: 'cancel_showcase_match', queue_id: queueId })
-    pendingCancelId = null
+    if (sendShowcaseCommand({ type: 'cancel_showcase_match', queue_id: queueId })) pendingCancelId = null
   }
   function dismissCancel() {
     pendingCancelId = null
@@ -46,12 +46,13 @@
             {#if pendingCancelId === q.id}
               <span class="confirm-row">
                 <span class="confirm-text">Cancel?</span>
-                <button class="confirm-btn yes" on:click={() => confirmCancel(q.id)}>Yes</button>
+                <button class="confirm-btn yes" disabled={commandDisabled} on:click={() => confirmCancel(q.id)}>Yes</button>
                 <button class="confirm-btn no" on:click={dismissCancel}>No</button>
               </span>
             {:else}
               <button
                 class="cancel-btn"
+                disabled={commandDisabled}
                 on:click={() => requestCancel(q.id)}
                 aria-label={`Cancel queued match ${blackName} vs ${whiteName}`}
               >Cancel</button>

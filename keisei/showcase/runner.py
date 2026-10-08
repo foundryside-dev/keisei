@@ -19,6 +19,7 @@ import numpy as np
 
 from keisei.db import _connect
 from keisei.db.showcase import (
+    MAX_SHOWCASE_QUEUE_DEPTH,
     claim_next_match,
     cleanup_orphaned_games,
     complete_queue_entry,
@@ -268,7 +269,10 @@ class ShowcaseRunner:
             conn.close()
         if len(rows) < 2:
             return
-        queue_match(self.db_path, str(rows[0]["id"]), str(rows[1]["id"]), "normal")
+        queue_match(
+            self.db_path, str(rows[0]["id"]), str(rows[1]["id"]), "normal",
+            max_pending=MAX_SHOWCASE_QUEUE_DEPTH, validate_entries=True,
+        )
         self._last_auto_showcase = time.monotonic()
         logger.info("Auto-showcase: queued top-2 league entries")
 

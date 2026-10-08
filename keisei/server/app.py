@@ -30,16 +30,17 @@ from keisei.db import (
     read_training_state,
 )
 from keisei.db.showcase import (
-    cancel_match as showcase_cancel_match,
-)
-from keisei.db.showcase import (
-    queue_match as showcase_queue_match,
-)
-from keisei.db.showcase import (
+    MAX_SHOWCASE_QUEUE_DEPTH,
     read_all_showcase_moves,
     read_latest_showcase_game,
     read_showcase_game,
     read_showcase_moves_since,
+)
+from keisei.db.showcase import (
+    cancel_match as showcase_cancel_match,
+)
+from keisei.db.showcase import (
+    queue_match as showcase_queue_match,
 )
 from keisei.db.showcase import (
     read_heartbeat as showcase_read_heartbeat,
@@ -61,7 +62,6 @@ ALLOWED_HOSTS = frozenset({"keisei.foundryside.dev", "192.168.1.240", "127.0.0.1
 TEST_ALLOWED_HOSTS = ALLOWED_HOSTS | {"testserver", "test"}
 SHOWCASE_POLL_INTERVAL_S = 0.5
 VALID_SPEEDS = frozenset({"slow", "normal", "fast"})
-MAX_SHOWCASE_QUEUE_DEPTH = 5
 LEAGUE_POLL_INTERVAL_S = 5.0
 POLL_BATCH_SIZE = 100
 HEARTBEAT_STALE_S = 30
