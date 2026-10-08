@@ -132,7 +132,7 @@ class TestCUDAStreamDevice:
                     created_streams.append({"device": device})
 
             mp.setattr(torch.cuda, "Stream", _TrackingStream)
-            runner = DemonstratorRunner(
+            DemonstratorRunner(
                 store=pool, db_path="/tmp/test.db",
                 num_slots=1, moves_per_minute=600, device="cuda:2",
             )

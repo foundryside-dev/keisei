@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use shogi_core::{GameState, MoveList};
 
 fn bench_legal_moves_opening(c: &mut Criterion) {
@@ -37,9 +37,7 @@ fn bench_attack_map_from_scratch(c: &mut Criterion) {
     use shogi_core::Position;
     c.bench_function("attack_map_from_scratch", |b| {
         let pos = Position::startpos();
-        b.iter(|| {
-            shogi_core::attack::compute_attack_map(&pos)
-        });
+        b.iter(|| shogi_core::attack::compute_attack_map(&pos));
     });
 }
 

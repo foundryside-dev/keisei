@@ -101,8 +101,6 @@ def test_save_checkpoint_atomic_no_corrupt_on_failure(
     save_checkpoint(path, model, optimizer, epoch=1, step=100)
     original_bytes = path.read_bytes()
 
-    real_save = torch.save
-
     def partial_write_then_crash(data: object, f: object, *args: object, **kwargs: object) -> None:
         """Simulate a crash: write garbage to the target, then raise."""
         target = Path(str(f))
@@ -346,8 +344,8 @@ class TestNumpyRngSerialization:
 
     def test_rng_survives_full_checkpoint_save_load(self, tmp_path: Path, model: ResNetModel) -> None:
         """Full checkpoint save→load preserves numpy RNG state end-to-end."""
+
         import numpy as np
-        import random as stdlib_random
 
         optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 

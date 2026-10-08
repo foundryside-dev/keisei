@@ -29,13 +29,13 @@ pub const SPATIAL_ACTION_SPACE_SIZE: usize = SPATIAL_NUM_SQUARES * SPATIAL_MOVE_
 
 // Direction deltas: (delta_row, delta_col)
 const DIRECTIONS: [(i8, i8); 8] = [
-    (-1,  0), // 0: N
-    (-1,  1), // 1: NE
-    ( 0,  1), // 2: E
-    ( 1,  1), // 3: SE
-    ( 1,  0), // 4: S
-    ( 1, -1), // 5: SW
-    ( 0, -1), // 6: W
+    (-1, 0),  // 0: N
+    (-1, 1),  // 1: NE
+    (0, 1),   // 2: E
+    (1, 1),   // 3: SE
+    (1, 0),   // 4: S
+    (1, -1),  // 5: SW
+    (0, -1),  // 6: W
     (-1, -1), // 7: NW
 ];
 
@@ -52,9 +52,12 @@ impl SpatialActionMapper {
 
     /// Compute direction index and distance for a board move.
     /// Returns None if the move doesn't fit the direction+distance scheme (knight move).
-    fn direction_and_distance(from_row: i8, from_col: i8, to_row: i8, to_col: i8)
-        -> Option<(usize, usize)>
-    {
+    fn direction_and_distance(
+        from_row: i8,
+        from_col: i8,
+        to_row: i8,
+        to_col: i8,
+    ) -> Option<(usize, usize)> {
         let dr = to_row - from_row;
         let dc = to_col - from_col;
 
@@ -81,7 +84,9 @@ impl SpatialActionMapper {
         }
 
         // Find direction index
-        let dir = DIRECTIONS.iter().position(|&(r, c)| r == unit_dr && c == unit_dc)?;
+        let dir = DIRECTIONS
+            .iter()
+            .position(|&(r, c)| r == unit_dr && c == unit_dc)?;
         let distance = max_delta; // 1-indexed (distance 1 = adjacent)
 
         if distance == 0 || distance > 8 {
@@ -148,21 +153,19 @@ impl ActionMapper for SpatialActionMapper {
                 let source_sq = from_p.index();
 
                 // Try direction+distance encoding first
-                if let Some((dir, distance)) = Self::direction_and_distance(
-                    from_row, from_col, to_row, to_col
-                ) {
+                if let Some((dir, distance)) =
+                    Self::direction_and_distance(from_row, from_col, to_row, to_col)
+                {
                     let slot = if promote {
                         64 + dir * 8 + (distance - 1) // promoted: slots 64-127
                     } else {
-                        dir * 8 + (distance - 1)       // non-promoted: slots 0-63
+                        dir * 8 + (distance - 1) // non-promoted: slots 0-63
                     };
                     return Ok(source_sq * SPATIAL_MOVE_TYPES + slot);
                 }
 
                 // Try knight encoding
-                if let Some(knight_side) = Self::knight_slot(
-                    from_row, from_col, to_row, to_col
-                ) {
+                if let Some(knight_side) = Self::knight_slot(from_row, from_col, to_row, to_col) {
                     // Knight slots: 128=left_no_promo, 129=left_promo, 130=right_no_promo, 131=right_promo
                     let slot = 128 + knight_side * 2 + if promote { 1 } else { 0 };
                     return Ok(source_sq * SPATIAL_MOVE_TYPES + slot);
@@ -186,7 +189,8 @@ impl ActionMapper for SpatialActionMapper {
         if idx >= SPATIAL_ACTION_SPACE_SIZE {
             return Err(format!(
                 "action index {} out of range (max {})",
-                idx, SPATIAL_ACTION_SPACE_SIZE - 1
+                idx,
+                SPATIAL_ACTION_SPACE_SIZE - 1
             ));
         }
 
@@ -208,7 +212,7 @@ impl ActionMapper for SpatialActionMapper {
             let to_row = from_row + dr * distance as i8;
             let to_col = from_col + dc * distance as i8;
 
-            if to_row < 0 || to_row > 8 || to_col < 0 || to_col > 8 {
+            if !(0..=8).contains(&to_row) || !(0..=8).contains(&to_col) {
                 return Err(format!(
                     "decoded move goes off board: from ({},{}) dir={} dist={}",
                     from_row, from_col, dir, distance
@@ -221,7 +225,11 @@ impl ActionMapper for SpatialActionMapper {
             let from_real = Self::apply_perspective(from_sq, perspective);
             let to_real = Self::apply_perspective(to_sq_raw, perspective);
 
-            Ok(Move::Board { from: from_real, to: to_real, promote })
+            Ok(Move::Board {
+                from: from_real,
+                to: to_real,
+                promote,
+            })
         } else if slot < 132 {
             // Knight move (slots 128-131)
             let knight_idx = slot - 128;
@@ -241,7 +249,7 @@ impl ActionMapper for SpatialActionMapper {
             let to_row = from_row + dr;
             let to_col = from_col + dc;
 
-            if to_row < 0 || to_row > 8 || to_col < 0 || to_col > 8 {
+            if !(0..=8).contains(&to_row) || !(0..=8).contains(&to_col) {
                 return Err(format!(
                     "decoded knight move goes off board: from ({},{}) side={}",
                     from_row, from_col, knight_side
@@ -254,7 +262,11 @@ impl ActionMapper for SpatialActionMapper {
             let from_real = Self::apply_perspective(from_sq, perspective);
             let to_real = Self::apply_perspective(to_sq_raw, perspective);
 
-            Ok(Move::Board { from: from_real, to: to_real, promote })
+            Ok(Move::Board {
+                from: from_real,
+                to: to_real,
+                promote,
+            })
         } else {
             // Drop move (slots 132-138)
             let piece_idx = slot - 132;
@@ -266,7 +278,10 @@ impl ActionMapper for SpatialActionMapper {
             let to_real = Self::apply_perspective(to_sq, perspective);
             let piece_type = HandPieceType::ALL[piece_idx];
 
-            Ok(Move::Drop { to: to_real, piece_type })
+            Ok(Move::Drop {
+                to: to_real,
+                piece_type,
+            })
         }
     }
 
@@ -315,7 +330,8 @@ impl SpatialActionMapper {
         if piece_type_idx >= HandPieceType::COUNT {
             return Err(pyo3::exceptions::PyValueError::new_err(format!(
                 "piece_type_idx {} out of range (max {})",
-                piece_type_idx, HandPieceType::COUNT - 1
+                piece_type_idx,
+                HandPieceType::COUNT - 1
             )));
         }
         let piece_type = HandPieceType::ALL[piece_type_idx];
@@ -374,7 +390,10 @@ mod tests {
     fn test_action_space_size() {
         assert_eq!(SPATIAL_ACTION_SPACE_SIZE, 11_259);
         let m = mapper();
-        assert_eq!(<SpatialActionMapper as ActionMapper>::action_space_size(&m), 11_259);
+        assert_eq!(
+            <SpatialActionMapper as ActionMapper>::action_space_size(&m),
+            11_259
+        );
     }
 
     #[test]
@@ -384,12 +403,19 @@ mod tests {
         let to_row = 40i8 / 9 - 4;
         let to_col = 40i8 % 9;
         let to = Square::from_row_col(to_row as u8, to_col as u8).unwrap();
-        let mv = Move::Board { from, to, promote: false };
+        let mv = Move::Board {
+            from,
+            to,
+            promote: false,
+        };
         let idx = trait_encode(&m, mv, Color::Black);
 
-        let expected_slot = 0 * 8 + 3; // dir=N(0), distance=4 -> slot index 3
+        let expected_slot = 3; // dir=N(0), distance=4 -> slot index 3
         let expected = 40 * 139 + expected_slot;
-        assert_eq!(idx, expected, "Flat index should be square * 139 + move_type");
+        assert_eq!(
+            idx, expected,
+            "Flat index should be square * 139 + move_type"
+        );
     }
 
     #[test]
@@ -402,10 +428,18 @@ mod tests {
                 let idx = trait_encode(&m, mv, Color::Black);
 
                 let slot = idx % SPATIAL_MOVE_TYPES;
-                assert!(slot >= 132 && slot <= 138, "Drop slot {} out of range", slot);
+                assert!(
+                    (132..=138).contains(&slot),
+                    "Drop slot {} out of range",
+                    slot
+                );
 
                 let decoded = trait_decode(&m, idx, Color::Black).expect("decode failed");
-                assert_eq!(decoded, mv, "Drop roundtrip failed for to={}, piece={:?}", to_idx, piece_type);
+                assert_eq!(
+                    decoded, mv,
+                    "Drop roundtrip failed for to={}, piece={:?}",
+                    to_idx, piece_type
+                );
             }
         }
     }
@@ -435,15 +469,14 @@ mod tests {
             for dist in 1..=8usize {
                 let to_row = from_row + dr * dist as i8;
                 let to_col = from_col + dc * dist as i8;
-                if to_row < 0 || to_row > 8 || to_col < 0 || to_col > 8 {
+                if !(0..=8).contains(&to_row) || !(0..=8).contains(&to_col) {
                     continue;
                 }
                 let to = Square::from_row_col(to_row as u8, to_col as u8).unwrap();
                 for promote in [false, true] {
                     let mv = Move::Board { from, to, promote };
                     let idx = trait_encode(&m, mv, Color::Black);
-                    let decoded = trait_decode(&m, idx, Color::Black)
-                        .expect("decode failed");
+                    let decoded = trait_decode(&m, idx, Color::Black).expect("decode failed");
                     assert_eq!(
                         decoded, mv,
                         "Sliding roundtrip failed: dir={}, dist={}, promote={}",
@@ -467,12 +500,17 @@ mod tests {
                 let idx = trait_encode(&m, mv, Color::Black);
                 let slot = idx % SPATIAL_MOVE_TYPES;
                 assert!(
-                    slot >= 128 && slot <= 131,
+                    (128..=131).contains(&slot),
                     "Knight slot {} out of range for {} side",
-                    slot, side_name
+                    slot,
+                    side_name
                 );
                 let decoded = trait_decode(&m, idx, Color::Black).expect("decode failed");
-                assert_eq!(decoded, mv, "Knight roundtrip failed: {}, promote={}", side_name, promote);
+                assert_eq!(
+                    decoded, mv,
+                    "Knight roundtrip failed: {}, promote={}",
+                    side_name, promote
+                );
             }
         }
     }
@@ -482,12 +520,19 @@ mod tests {
         let m = mapper();
         let from = Square::new_unchecked(20);
         let to = Square::new_unchecked(11);
-        let mv = Move::Board { from, to, promote: false };
+        let mv = Move::Board {
+            from,
+            to,
+            promote: false,
+        };
 
         let idx_black = trait_encode(&m, mv, Color::Black);
         let idx_white = trait_encode(&m, mv, Color::White);
 
-        assert_ne!(idx_black, idx_white, "Perspectives should produce different indices");
+        assert_ne!(
+            idx_black, idx_white,
+            "Perspectives should produce different indices"
+        );
 
         let decoded_black = trait_decode(&m, idx_black, Color::Black).unwrap();
         let decoded_white = trait_decode(&m, idx_white, Color::White).unwrap();
@@ -500,7 +545,10 @@ mod tests {
     fn test_perspective_flip_drop_move() {
         let m = mapper();
         let to = Square::new_unchecked(10);
-        let mv = Move::Drop { to, piece_type: HandPieceType::Rook };
+        let mv = Move::Drop {
+            to,
+            piece_type: HandPieceType::Rook,
+        };
 
         let idx_black = trait_encode(&m, mv, Color::Black);
         let idx_white = trait_encode(&m, mv, Color::White);
@@ -527,9 +575,18 @@ mod tests {
         let mut seen = HashSet::new();
         for to_idx in 0u8..81 {
             for &pt in &HandPieceType::ALL {
-                let mv = Move::Drop { to: Square::new_unchecked(to_idx), piece_type: pt };
+                let mv = Move::Drop {
+                    to: Square::new_unchecked(to_idx),
+                    piece_type: pt,
+                };
                 let idx = trait_encode(&m, mv, Color::Black);
-                assert!(seen.insert(idx), "Collision at index {} for drop to={} piece={:?}", idx, to_idx, pt);
+                assert!(
+                    seen.insert(idx),
+                    "Collision at index {} for drop to={} piece={:?}",
+                    idx,
+                    to_idx,
+                    pt
+                );
             }
         }
         assert_eq!(seen.len(), 81 * 7); // 567 drop actions
@@ -548,16 +605,21 @@ mod tests {
             for (dir_idx, (dr, dc)) in DIRECTIONS.iter().enumerate() {
                 let to_row = from_row + dr;
                 let to_col = from_col + dc;
-                if to_row < 0 || to_row > 8 || to_col < 0 || to_col > 8 {
+                if !(0..=8).contains(&to_row) || !(0..=8).contains(&to_col) {
                     continue; // Off-board, skip
                 }
                 let to = Square::from_row_col(to_row as u8, to_col as u8).unwrap();
-                let mv = Move::Board { from, to, promote: false };
+                let mv = Move::Board {
+                    from,
+                    to,
+                    promote: false,
+                };
                 let idx = trait_encode(&m, mv, Color::Black);
                 let decoded = trait_decode(&m, idx, Color::Black).expect("decode failed");
                 assert_eq!(
                     decoded, mv,
-                    "Corner {} dir {} roundtrip failed", corner, dir_idx
+                    "Corner {} dir {} roundtrip failed",
+                    corner, dir_idx
                 );
             }
         }
@@ -569,18 +631,32 @@ mod tests {
         // Knight at col 0: can only jump to (row-2, col+1), not (row-2, col-1)
         let from = Square::from_row_col(4, 0).unwrap();
         let to_right = Square::from_row_col(2, 1).unwrap();
-        let mv = Move::Board { from, to: to_right, promote: false };
+        let mv = Move::Board {
+            from,
+            to: to_right,
+            promote: false,
+        };
         let idx = trait_encode(&m, mv, Color::Black);
         let decoded = trait_decode(&m, idx, Color::Black).expect("decode failed");
-        assert_eq!(decoded, mv, "Knight from col 0 should encode/decode correctly");
+        assert_eq!(
+            decoded, mv,
+            "Knight from col 0 should encode/decode correctly"
+        );
 
         // Knight at col 8: can only jump to (row-2, col-1), not (row-2, col+1)
         let from = Square::from_row_col(4, 8).unwrap();
         let to_left = Square::from_row_col(2, 7).unwrap();
-        let mv = Move::Board { from, to: to_left, promote: false };
+        let mv = Move::Board {
+            from,
+            to: to_left,
+            promote: false,
+        };
         let idx = trait_encode(&m, mv, Color::Black);
         let decoded = trait_decode(&m, idx, Color::Black).expect("decode failed");
-        assert_eq!(decoded, mv, "Knight from col 8 should encode/decode correctly");
+        assert_eq!(
+            decoded, mv,
+            "Knight from col 8 should encode/decode correctly"
+        );
     }
 
     #[test]
@@ -588,12 +664,18 @@ mod tests {
         let m = mapper();
         // Knight on row 0 col 0: both knight destinations (row -2, col ±1) are off-board
         // Slot 128 = left knight no promote from sq 0
-        let idx = 0 * SPATIAL_MOVE_TYPES + 128;
-        assert!(trait_decode(&m, idx, Color::Black).is_err(), "Knight off-board should fail");
+        let idx = 128;
+        assert!(
+            trait_decode(&m, idx, Color::Black).is_err(),
+            "Knight off-board should fail"
+        );
 
         // Slot 130 = right knight no promote from sq 0
-        let idx = 0 * SPATIAL_MOVE_TYPES + 130;
-        assert!(trait_decode(&m, idx, Color::Black).is_err(), "Knight off-board should fail");
+        let idx = 130;
+        assert!(
+            trait_decode(&m, idx, Color::Black).is_err(),
+            "Knight off-board should fail"
+        );
     }
 
     #[test]
@@ -602,9 +684,18 @@ mod tests {
         let mut seen = HashSet::new();
         for to_idx in 0u8..81 {
             for &pt in &HandPieceType::ALL {
-                let mv = Move::Drop { to: Square::new_unchecked(to_idx), piece_type: pt };
+                let mv = Move::Drop {
+                    to: Square::new_unchecked(to_idx),
+                    piece_type: pt,
+                };
                 let idx = trait_encode(&m, mv, Color::White);
-                assert!(seen.insert(idx), "White collision at index {} for drop to={} piece={:?}", idx, to_idx, pt);
+                assert!(
+                    seen.insert(idx),
+                    "White collision at index {} for drop to={} piece={:?}",
+                    idx,
+                    to_idx,
+                    pt
+                );
             }
         }
         assert_eq!(seen.len(), 81 * 7);
@@ -622,14 +713,18 @@ mod tests {
         //   slot 1 ("right") = dc has opposite sign     → persp (2,4)→(0,5): dr=-2, dc=+1 → opposite
         // These labels look swapped in absolute coordinates because the flip inverts both axes.
         let from = Square::from_row_col(6, 4).unwrap();
-        let to_left = Square::from_row_col(8, 5).unwrap();  // abs col 5, but persp dc=-1 → slot 0
+        let to_left = Square::from_row_col(8, 5).unwrap(); // abs col 5, but persp dc=-1 → slot 0
         let to_right = Square::from_row_col(8, 3).unwrap(); // abs col 3, but persp dc=+1 → slot 1
         for (to, side) in [(to_left, "left"), (to_right, "right")] {
             for promote in [false, true] {
                 let mv = Move::Board { from, to, promote };
                 let idx = trait_encode(&m, mv, Color::White);
                 let decoded = trait_decode(&m, idx, Color::White).expect("decode failed");
-                assert_eq!(decoded, mv, "White knight roundtrip failed: {}, promote={}", side, promote);
+                assert_eq!(
+                    decoded, mv,
+                    "White knight roundtrip failed: {}, promote={}",
+                    side, promote
+                );
             }
         }
     }
@@ -642,17 +737,26 @@ mod tests {
     fn test_hand_piece_type_index_stability() {
         for (expected_idx, &hpt) in HandPieceType::ALL.iter().enumerate() {
             assert_eq!(
-                hpt.index(), expected_idx,
+                hpt.index(),
+                expected_idx,
                 "HandPieceType::{:?}.index() should be {}, got {}",
-                hpt, expected_idx, hpt.index()
+                hpt,
+                expected_idx,
+                hpt.index()
             );
             assert_eq!(
-                HandPieceType::ALL[hpt.index()], hpt,
+                HandPieceType::ALL[hpt.index()],
+                hpt,
                 "HandPieceType::ALL[{:?}.index()] should round-trip to {:?}",
-                hpt, hpt
+                hpt,
+                hpt
             );
         }
-        assert_eq!(HandPieceType::ALL.len(), 7, "Should have exactly 7 droppable piece types");
+        assert_eq!(
+            HandPieceType::ALL.len(),
+            7,
+            "Should have exactly 7 droppable piece types"
+        );
     }
 
     /// Round-trip all legal moves from the starting position.
@@ -666,7 +770,11 @@ mod tests {
 
         for mv in legal_moves.iter() {
             let idx = trait_encode(&m, *mv, Color::Black);
-            assert!(idx < SPATIAL_ACTION_SPACE_SIZE, "Index {} out of range", idx);
+            assert!(
+                idx < SPATIAL_ACTION_SPACE_SIZE,
+                "Index {} out of range",
+                idx
+            );
             let decoded = trait_decode(&m, idx, Color::Black)
                 .unwrap_or_else(|e| panic!("Failed to decode move {:?}: {}", mv, e));
             assert_eq!(
@@ -695,22 +803,30 @@ mod tests {
 
             for mv in legal_moves.iter() {
                 let idx = trait_encode(&m, *mv, color);
-                assert!(idx < SPATIAL_ACTION_SPACE_SIZE,
-                    "Index {} out of range at ply {} for {:?}", idx, ply, mv);
+                assert!(
+                    idx < SPATIAL_ACTION_SPACE_SIZE,
+                    "Index {} out of range at ply {} for {:?}",
+                    idx,
+                    ply,
+                    mv
+                );
 
                 let slot = idx % SPATIAL_MOVE_TYPES;
                 if (128..132).contains(&slot) {
                     knight_moves_seen += 1;
                 }
 
-                let decoded = trait_decode(&m, idx, color)
-                    .unwrap_or_else(|e| panic!(
+                let decoded = trait_decode(&m, idx, color).unwrap_or_else(|e| {
+                    panic!(
                         "Failed to decode {:?} at ply {} for {:?}: {}",
                         mv, ply, color, e
-                    ));
-                assert_eq!(decoded, *mv,
+                    )
+                });
+                assert_eq!(
+                    decoded, *mv,
                     "Roundtrip failed at ply {} for {:?}: {:?} (encoded as {})",
-                    ply, color, mv, idx);
+                    ply, color, mv, idx
+                );
             }
 
             // Advance the game by playing the first legal move.

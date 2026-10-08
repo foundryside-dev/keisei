@@ -7,10 +7,21 @@ unified training loop never branches on model type.
 
 from __future__ import annotations
 
+import math
 from abc import ABC, abstractmethod
 
 import torch
 import torch.nn.functional as F
+
+
+def wdl_cross_entropy_loss(
+    value_logits: torch.Tensor, value_cats: torch.Tensor,
+) -> torch.Tensor:
+    """Train only labelled rows; ignored heads have no backward connection."""
+    labelled = value_cats >= 0
+    if not labelled.any():
+        return value_logits.new_zeros((), dtype=torch.float32)
+    return F.cross_entropy(value_logits[labelled].float(), value_cats[labelled])
 
 
 class ValueHeadAdapter(ABC):
@@ -64,9 +75,9 @@ class MultiHeadValueAdapter(ValueHeadAdapter):
 
     def __init__(self, lambda_value: float = 1.5, lambda_score: float = 0.02,
                  score_blend_alpha: float = 0.0) -> None:
-        if lambda_value < 0:
+        if not math.isfinite(lambda_value) or lambda_value < 0:
             raise ValueError(f"lambda_value must be >= 0, got {lambda_value}")
-        if lambda_score < 0:
+        if not math.isfinite(lambda_score) or lambda_score < 0:
             raise ValueError(f"lambda_score must be >= 0, got {lambda_score}")
         if not (0.0 <= score_blend_alpha <= 1.0):
             raise ValueError(
@@ -110,20 +121,15 @@ class MultiHeadValueAdapter(ValueHeadAdapter):
         if score_pred is None:
             raise ValueError("MultiHeadValueAdapter requires score_pred")
 
-        # Guard: when all value_cats are -1 (all non-terminal), cross_entropy
-        # returns NaN. Use graph-connected zero to preserve backward() graph.
-        has_valid = (value_cats >= 0).any()
-        if has_valid:
-            value_loss = F.cross_entropy(value_output, value_cats, ignore_index=-1)
-        else:
-            value_loss = value_output.sum() * 0.0
-
-        # Score loss (MSE on normalized material balance).
-        # The buffer guarantees no NaN in score_targets — every position has
-        # a real material balance value.
-        score_loss = F.mse_loss(score_pred.squeeze(-1), score_targets)
-
-        return self.lambda_value * value_loss + self.lambda_score * score_loss
+        # Even a zero output gradient can propagate NaN head weights into the
+        # shared trunk. Disabled and unlabelled heads must be disconnected.
+        value_loss = value_output.new_zeros((), dtype=torch.float32)
+        if self.lambda_value:
+            value_loss = self.lambda_value * wdl_cross_entropy_loss(value_output, value_cats)
+        score_loss = score_pred.new_zeros((), dtype=torch.float32)
+        if self.lambda_score:
+            score_loss = self.lambda_score * F.mse_loss(score_pred.float().squeeze(-1), score_targets)
+        return value_loss + score_loss
 
 
 def get_value_adapter(

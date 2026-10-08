@@ -2,10 +2,12 @@
 
 import time
 
-import torch
 import pytest
+import torch
 
 from keisei.training.gae import compute_gae, compute_gae_padded
+from keisei.training.katago_ppo import KataGoPPOAlgorithm, KataGoPPOParams, KataGoRolloutBuffer
+from keisei.training.models.se_resnet import SEResNetModel, SEResNetParams
 
 
 class TestVectorizedEnvPartition:
@@ -86,7 +88,7 @@ class TestGAEPaddedGPU:
     """GPU padded GAE must match CPU padded GAE within floating-point tolerance."""
 
     def test_gpu_padded_matches_cpu_padded(self):
-        from keisei.training.gae import compute_gae_padded, compute_gae_padded_gpu
+        from keisei.training.gae import compute_gae_padded_gpu
 
         torch.manual_seed(42)
         T_max, N = 20, 8
@@ -137,8 +139,6 @@ class TestGAEPaddedGPU:
         assert torch.allclose(padded_adv, direct_adv, atol=1e-5)
 
 
-from keisei.training.katago_ppo import KataGoPPOAlgorithm, KataGoPPOParams, KataGoRolloutBuffer
-from keisei.training.models.se_resnet import SEResNetModel, SEResNetParams
 
 
 class TestPreAllocatedBuffer:

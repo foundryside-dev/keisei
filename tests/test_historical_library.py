@@ -3,10 +3,10 @@
 import pytest
 import torch
 
-from keisei.config import HistoricalLibraryConfig, LeagueConfig
+from keisei.config import HistoricalLibraryConfig
 from keisei.db import init_db
 from keisei.training.historical_library import HistoricalLibrary
-from keisei.training.opponent_store import EntryStatus, OpponentStore, Role
+from keisei.training.opponent_store import OpponentStore, Role
 
 pytestmark = pytest.mark.integration
 
@@ -162,7 +162,7 @@ class TestRefresh:
         library, store = library_setup
         model = torch.nn.Linear(10, 10)
         # Create an active entry and a retired entry at the same epoch
-        active = store.add_entry(model, "resnet", {}, epoch=100, role=Role.DYNAMIC)
+        store.add_entry(model, "resnet", {}, epoch=100, role=Role.DYNAMIC)
         retired = store.add_entry(model, "resnet", {}, epoch=100, role=Role.RECENT_FIXED)
         store.retire_entry(retired.id, "archive")
 

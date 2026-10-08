@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from keisei.config import LeagueConfig
 from keisei.training.dynamic_trainer import DynamicTrainer
@@ -18,6 +19,9 @@ from keisei.training.tier_managers import (
     RecentFixedManager,
     ReviewOutcome,
 )
+
+if TYPE_CHECKING:
+    from torch.nn import Module
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +111,7 @@ class TieredPool:
     # ------------------------------------------------------------------
 
     def snapshot_learner(
-        self, model: object, arch: str, params: dict[str, object], epoch: int
+        self, model: Module, arch: str, params: dict[str, object], epoch: int
     ) -> OpponentEntry:
         """Take a learner snapshot and admit it to the Recent Fixed tier.
 

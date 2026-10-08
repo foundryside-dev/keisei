@@ -4,10 +4,10 @@ mod action_mapper;
 mod katago_observation;
 mod observation;
 mod spatial_action_mapper;
+mod spectator;
 mod spectator_data;
 mod step_result;
 mod vec_env;
-mod spectator;
 
 /// Native module for shogi-gym RL environments.
 #[pymodule]

@@ -39,7 +39,6 @@ from keisei.training.katago_ppo import (
 )
 from keisei.training.models.se_resnet import SEResNetModel, SEResNetParams
 
-
 # ---------------------------------------------------------------------------
 # Model scales
 # ---------------------------------------------------------------------------
@@ -511,7 +510,7 @@ def run_compile_diagnostics(scale: str, device: torch.device) -> None:
             print(f"  - {reason}")
 
     # Check for recompilations with different batch sizes
-    print(f"\n--- Recompilation test (varying batch sizes) ---")
+    print("\n--- Recompilation test (varying batch sizes) ---")
     torch._dynamo.reset()
     compiled = torch.compile(model, mode="default", dynamic=True)
 
@@ -524,7 +523,7 @@ def run_compile_diagnostics(scale: str, device: torch.device) -> None:
         print(f"  bs={bs:>4}: graph_breaks={sum(guards.values()) if guards else 0}")
 
     # Check with compile_dynamic=False (fixed shapes)
-    print(f"\n--- Static shapes (compile_dynamic=False) ---")
+    print("\n--- Static shapes (compile_dynamic=False) ---")
     torch._dynamo.reset()
     compiled_static = torch.compile(model, mode="default", dynamic=False)
     obs = torch.randn(256, 50, 9, 9, device=device)
@@ -534,7 +533,7 @@ def run_compile_diagnostics(scale: str, device: torch.device) -> None:
     print(f"  Graph breaks (static): {explanation_static.graph_break_count}")
 
     # AMP interaction check
-    print(f"\n--- AMP + compile interaction ---")
+    print("\n--- AMP + compile interaction ---")
     torch._dynamo.reset()
     model_amp = SEResNetModel(params).to(device)
     model_amp.configure_amp(enabled=True, dtype=torch.bfloat16, device_type="cuda")

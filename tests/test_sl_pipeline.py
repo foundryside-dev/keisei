@@ -2,6 +2,8 @@
 """Tests for the supervised learning pipeline."""
 
 import logging
+import sys
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -245,6 +247,11 @@ class TestCRLFLineEndings:
         fail, then having chardet detect Shift-JIS. Without the CRLF
         normalization fix, this produces 1 merged game instead of 2.
         """
+        monkeypatch.setitem(
+            sys.modules,
+            "chardet",
+            SimpleNamespace(detect=lambda _: {"encoding": "shift_jis", "confidence": 1.0}),
+        )
 
         csa_content = (
             "V2.2\r\nN+A\r\nN-B\r\n+\r\n"

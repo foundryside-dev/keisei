@@ -29,7 +29,8 @@ pub const BUFFER_LEN: usize = NUM_CHANNELS * NUM_SQUARES;
 /// Maximum hand counts per piece type for normalization.
 /// Order: [Pawn=18, Lance=4, Knight=4, Silver=4, Gold=4, Bishop=2, Rook=2]
 /// Indices match HandPieceType::index() (0-based, same order as HandPieceType::ALL).
-pub(crate) const HAND_MAX_COUNTS: [f32; HandPieceType::COUNT] = [18.0, 4.0, 4.0, 4.0, 4.0, 2.0, 2.0];
+pub(crate) const HAND_MAX_COUNTS: [f32; HandPieceType::COUNT] =
+    [18.0, 4.0, 4.0, 4.0, 4.0, 2.0, 2.0];
 
 // ---------------------------------------------------------------------------
 // Channel mapping helpers
@@ -42,14 +43,14 @@ pub(crate) const HAND_MAX_COUNTS: [f32; HandPieceType::COUNT] = [18.0, 4.0, 4.0,
 #[inline]
 pub(crate) fn unpromoted_channel(pt: PieceType) -> usize {
     match pt {
-        PieceType::Pawn   => 0,
-        PieceType::Lance  => 1,
+        PieceType::Pawn => 0,
+        PieceType::Lance => 1,
         PieceType::Knight => 2,
         PieceType::Silver => 3,
-        PieceType::Gold   => 4,
+        PieceType::Gold => 4,
         PieceType::Bishop => 5,
-        PieceType::Rook   => 6,
-        PieceType::King   => 7,
+        PieceType::Rook => 6,
+        PieceType::King => 7,
     }
 }
 
@@ -61,12 +62,12 @@ pub(crate) fn unpromoted_channel(pt: PieceType) -> usize {
 #[inline]
 pub(crate) fn promoted_channel(pt: PieceType) -> usize {
     match pt {
-        PieceType::Pawn   => 0,
-        PieceType::Lance  => 1,
+        PieceType::Pawn => 0,
+        PieceType::Lance => 1,
         PieceType::Knight => 2,
         PieceType::Silver => 3,
         PieceType::Bishop => 4,
-        PieceType::Rook   => 5,
+        PieceType::Rook => 5,
         _ => panic!("piece type {:?} cannot be promoted", pt),
     }
 }
@@ -137,7 +138,11 @@ pub fn generate_base_channels(state: &GameState, perspective: Color, buffer: &mu
     }
 
     // --- Channel 42: Player indicator ---
-    let player_indicator = if perspective == Color::Black { 1.0_f32 } else { 0.0_f32 };
+    let player_indicator = if perspective == Color::Black {
+        1.0_f32
+    } else {
+        0.0_f32
+    };
     let start = 42 * NUM_SQUARES;
     buffer[start..start + NUM_SQUARES].fill(player_indicator);
 
@@ -248,7 +253,10 @@ mod tests {
     #[test]
     fn test_channels() {
         let obs_gen = make_gen();
-        assert_eq!(<DefaultObservationGenerator as ObservationGenerator>::channels(&obs_gen), 46);
+        assert_eq!(
+            <DefaultObservationGenerator as ObservationGenerator>::channels(&obs_gen),
+            46
+        );
     }
 
     #[test]
@@ -275,14 +283,30 @@ mod tests {
         obs_gen.generate(&state, Color::Black, &mut buf);
 
         // Black's king: channel 7, square 76
-        assert_eq!(buf[7 * NUM_SQUARES + 76], 1.0, "Black king not found at ch7, sq76");
+        assert_eq!(
+            buf[7 * NUM_SQUARES + 76],
+            1.0,
+            "Black king not found at ch7, sq76"
+        );
 
         // White's king (opponent): channel 21, square 4
-        assert_eq!(buf[21 * NUM_SQUARES + 4], 1.0, "White king not found at ch21, sq4");
+        assert_eq!(
+            buf[21 * NUM_SQUARES + 4],
+            1.0,
+            "White king not found at ch21, sq4"
+        );
 
         // Sanity: no king in wrong channels
-        assert_eq!(buf[7 * NUM_SQUARES + 4], 0.0, "Should be no king in ch7, sq4");
-        assert_eq!(buf[21 * NUM_SQUARES + 76], 0.0, "Should be no king in ch21, sq76");
+        assert_eq!(
+            buf[7 * NUM_SQUARES + 4],
+            0.0,
+            "Should be no king in ch7, sq4"
+        );
+        assert_eq!(
+            buf[21 * NUM_SQUARES + 76],
+            0.0,
+            "Should be no king in ch21, sq76"
+        );
     }
 
     /// At startpos from White's perspective (board is flipped 180°):
@@ -296,10 +320,18 @@ mod tests {
         obs_gen.generate(&state, Color::White, &mut buf);
 
         // White's king (current): channel 7, flipped square = 80 - 4 = 76
-        assert_eq!(buf[7 * NUM_SQUARES + 76], 1.0, "White king not found at ch7, sq76 (flipped)");
+        assert_eq!(
+            buf[7 * NUM_SQUARES + 76],
+            1.0,
+            "White king not found at ch7, sq76 (flipped)"
+        );
 
         // Black's king (opponent): channel 21, flipped square = 80 - 76 = 4
-        assert_eq!(buf[21 * NUM_SQUARES + 4], 1.0, "Black king not found at ch21, sq4 (flipped)");
+        assert_eq!(
+            buf[21 * NUM_SQUARES + 4],
+            1.0,
+            "Black king not found at ch21, sq4 (flipped)"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -365,7 +397,9 @@ mod tests {
             assert!(
                 (actual - expected).abs() < 1e-6,
                 "ch43[{}] expected {}, got {} at ply=1/max_ply=100",
-                i, expected, actual
+                i,
+                expected,
+                actual
             );
         }
     }
@@ -410,9 +444,11 @@ mod tests {
             let start = ch * NUM_SQUARES;
             for i in 0..NUM_SQUARES {
                 assert_eq!(
-                    buf[start + i], 0.0,
+                    buf[start + i],
+                    0.0,
                     "ch{}[{}] should be 0.0 at startpos (hand normalization)",
-                    ch, i
+                    ch,
+                    i
                 );
             }
         }
@@ -509,14 +545,16 @@ mod tests {
         // Channel 12 = 8 + promoted_channel(Bishop) = 8 + 4
         let sq_idx = 4 * 9 + 4; // row 4, col 4 = index 36
         assert_eq!(
-            buf[12 * NUM_SQUARES + sq_idx], 1.0,
+            buf[12 * NUM_SQUARES + sq_idx],
+            1.0,
             "Promoted bishop (Horse) should appear in channel 12 at square {}",
             sq_idx
         );
 
         // Should NOT appear in unpromoted bishop channel (5)
         assert_eq!(
-            buf[5 * NUM_SQUARES + sq_idx], 0.0,
+            buf[5 * NUM_SQUARES + sq_idx],
+            0.0,
             "Promoted bishop should NOT appear in unpromoted channel 5"
         );
     }
@@ -552,7 +590,8 @@ mod tests {
         // Channel 27 = 22 + promoted_channel(Rook) = 22 + 5
         let sq_idx = 3 * 9 + 3; // row 3, col 3 = index 30
         assert_eq!(
-            buf[27 * NUM_SQUARES + sq_idx], 1.0,
+            buf[27 * NUM_SQUARES + sq_idx],
+            1.0,
             "Opponent's promoted rook (Dragon) should appear in channel 27"
         );
     }
@@ -587,12 +626,13 @@ mod tests {
         let sq_idx = 2 * 9 + 4; // index 22
         // Channel 8 = 8 + promoted_channel(Pawn) = 8 + 0
         assert_eq!(
-            buf[8 * NUM_SQUARES + sq_idx], 1.0,
+            buf[8 * NUM_SQUARES + sq_idx],
+            1.0,
             "Promoted pawn (Tokin) should appear in channel 8"
         );
         // Should NOT appear in unpromoted pawn channel (0)
         assert_eq!(
-            buf[0 * NUM_SQUARES + sq_idx], 0.0,
+            buf[sq_idx], 0.0,
             "Promoted pawn should NOT appear in unpromoted channel 0"
         );
     }
@@ -628,7 +668,8 @@ mod tests {
         // Channel = 8 + promoted_channel(Silver) = 8 + 3 = 11
         // Square is flipped: 80 - 56 = 24
         assert_eq!(
-            buf[11 * NUM_SQUARES + 24], 1.0,
+            buf[11 * NUM_SQUARES + 24],
+            1.0,
             "White's promoted silver should appear in ch11 at flipped square 24"
         );
     }
@@ -703,15 +744,18 @@ mod tests {
 
             if pos.piece_at(sq).is_some() {
                 assert_eq!(
-                    channels_set.len(), 1,
+                    channels_set.len(),
+                    1,
                     "Occupied square {} should have exactly 1 channel set, got {:?}",
-                    idx, channels_set
+                    idx,
+                    channels_set
                 );
             } else {
                 assert!(
                     channels_set.is_empty(),
                     "Empty square {} should have no channels set, got {:?}",
-                    idx, channels_set
+                    idx,
+                    channels_set
                 );
             }
         }
@@ -736,7 +780,8 @@ mod tests {
             assert!(
                 !val.is_nan(),
                 "ch43[{}] should not be NaN when max_ply=0, got {}",
-                i, val
+                i,
+                val
             );
             assert_eq!(
                 val, 0.0,
@@ -750,7 +795,8 @@ mod tests {
             assert!(
                 !val.is_nan(),
                 "Buffer position {} should not be NaN, got {}",
-                i, val
+                i,
+                val
             );
         }
     }

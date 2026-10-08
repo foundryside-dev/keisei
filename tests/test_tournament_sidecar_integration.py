@@ -16,11 +16,11 @@ import pytest
 
 from keisei.config import ConcurrencyConfig, MatchSchedulerConfig
 from keisei.db import _connect, init_db
+from keisei.db.tournament_queue import get_round_status
 from keisei.training.concurrent_matches import MatchResult, RoundStats
 from keisei.training.match_scheduler import MatchScheduler
 from keisei.training.opponent_store import OpponentStore
 from keisei.training.tournament_dispatcher import TournamentDispatcher
-from keisei.db.tournament_queue import get_round_status
 from keisei.training.tournament_runner import TournamentWorker
 
 
@@ -64,7 +64,7 @@ def test_dispatcher_and_worker_round_trip(tmp_path: Path) -> None:
     Path(league_dir).mkdir()
     init_db(db)
 
-    ids = _seed_db(db, league_dir, n_entries=4)
+    _seed_db(db, league_dir, n_entries=4)
     store = OpponentStore(db_path=db, league_dir=league_dir)
     sched = MatchScheduler(MatchSchedulerConfig())
     dispatcher = TournamentDispatcher(

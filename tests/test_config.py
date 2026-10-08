@@ -559,16 +559,6 @@ class TestDynamicConfigLrScale:
             DynamicConfig(max_updates_per_minute=0)
 
 
-class TestDynamicConfigCheckpointFlush:
-    def test_checkpoint_flush_every_zero_raises(self):
-        with pytest.raises(ValueError, match="checkpoint_flush_every"):
-            DynamicConfig(checkpoint_flush_every=0)
-
-    def test_checkpoint_flush_every_negative_raises(self):
-        with pytest.raises(ValueError, match="checkpoint_flush_every"):
-            DynamicConfig(checkpoint_flush_every=-1)
-
-
 class TestDynamicConfigMaxBufferDepth:
     def test_max_buffer_depth_zero_raises(self):
         with pytest.raises(ValueError, match="max_buffer_depth"):

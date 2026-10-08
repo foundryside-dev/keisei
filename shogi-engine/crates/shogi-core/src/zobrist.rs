@@ -3,8 +3,8 @@
 //! The table is generated deterministically using the xoshiro256** PRNG seeded
 //! with a fixed value, so position hashes are reproducible across runs.
 
-use crate::types::{Color, HandPieceType, Square};
 use crate::piece::Piece;
+use crate::types::{Color, HandPieceType, Square};
 
 // ---------------------------------------------------------------------------
 // Private PRNG — splitmix64 seeder + xoshiro256**
@@ -33,10 +33,7 @@ impl SimpleRng {
     /// xoshiro256** next value.
     #[inline]
     fn next_u64(&mut self) -> u64 {
-        let result = self.state[1]
-            .wrapping_mul(5)
-            .rotate_left(7)
-            .wrapping_mul(9);
+        let result = self.state[1].wrapping_mul(5).rotate_left(7).wrapping_mul(9);
 
         let t = self.state[1] << 17;
 
@@ -128,8 +125,7 @@ impl Default for ZobristTable {
 /// The global, lazily-initialized Zobrist table.
 ///
 /// Initialised once on first access; safe to use from any thread after that.
-pub static ZOBRIST: std::sync::LazyLock<ZobristTable> =
-    std::sync::LazyLock::new(ZobristTable::new);
+pub static ZOBRIST: std::sync::LazyLock<ZobristTable> = std::sync::LazyLock::new(ZobristTable::new);
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -138,8 +134,8 @@ pub static ZOBRIST: std::sync::LazyLock<ZobristTable> =
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{Color, HandPieceType, PieceType, Square};
     use crate::piece::Piece;
+    use crate::types::{Color, HandPieceType, PieceType, Square};
 
     #[test]
     fn test_zobrist_deterministic() {
@@ -150,11 +146,9 @@ mod tests {
         for sq_idx in 0..81usize {
             for piece_val in 0..64usize {
                 assert_eq!(
-                    t1.piece_square[sq_idx][piece_val],
-                    t2.piece_square[sq_idx][piece_val],
+                    t1.piece_square[sq_idx][piece_val], t2.piece_square[sq_idx][piece_val],
                     "piece_square[{}][{}] differs",
-                    sq_idx,
-                    piece_val
+                    sq_idx, piece_val
                 );
             }
         }
@@ -164,12 +158,9 @@ mod tests {
             for h in 0..7 {
                 for cnt in 0..19 {
                     assert_eq!(
-                        t1.hand[c][h][cnt],
-                        t2.hand[c][h][cnt],
+                        t1.hand[c][h][cnt], t2.hand[c][h][cnt],
                         "hand[{}][{}][{}] differs",
-                        c,
-                        h,
-                        cnt
+                        c, h, cnt
                     );
                 }
             }
@@ -209,10 +200,7 @@ mod tests {
         // Basic sanity: the global table should be identical to a freshly built one.
         let fresh = ZobristTable::new();
         assert_eq!(ZOBRIST.side_to_move, fresh.side_to_move);
-        assert_eq!(
-            ZOBRIST.piece_square[0][1],
-            fresh.piece_square[0][1]
-        );
+        assert_eq!(ZOBRIST.piece_square[0][1], fresh.piece_square[0][1]);
     }
 
     #[test]
@@ -328,7 +316,11 @@ mod tests {
         // Generate diverse positions by permuting board state
         for seed in 0u64..500 {
             let mut pos = Position::empty();
-            pos.current_player = if seed % 2 == 0 { Color::Black } else { Color::White };
+            pos.current_player = if seed % 2 == 0 {
+                Color::Black
+            } else {
+                Color::White
+            };
 
             // Place a king for each side
             let bk_idx = (seed % 81) as u8;
@@ -346,18 +338,23 @@ mod tests {
 
             // Add a few more pieces based on the seed
             let piece_types = [
-                PieceType::Pawn, PieceType::Lance, PieceType::Knight,
-                PieceType::Silver, PieceType::Gold, PieceType::Bishop,
+                PieceType::Pawn,
+                PieceType::Lance,
+                PieceType::Knight,
+                PieceType::Silver,
+                PieceType::Gold,
+                PieceType::Bishop,
                 PieceType::Rook,
             ];
             let pt = piece_types[(seed as usize) % piece_types.len()];
-            let color = if seed % 3 == 0 { Color::White } else { Color::Black };
+            let color = if seed % 3 == 0 {
+                Color::White
+            } else {
+                Color::Black
+            };
             let sq_idx = ((seed * 11 + 3) % 81) as u8;
             if sq_idx != bk_idx && sq_idx != wk_idx {
-                pos.set_piece(
-                    Square::new_unchecked(sq_idx),
-                    Piece::new(pt, color, false),
-                );
+                pos.set_piece(Square::new_unchecked(sq_idx), Piece::new(pt, color, false));
             }
 
             // Add hand pieces
@@ -400,10 +397,16 @@ mod tests {
                 assert!(
                     hashes.insert(h),
                     "Collision: {:?} on square {} has same hash as another square",
-                    piece, sq_idx
+                    piece,
+                    sq_idx
                 );
             }
-            assert_eq!(hashes.len(), 81, "not all 81 squares produced unique hashes for {:?}", piece);
+            assert_eq!(
+                hashes.len(),
+                81,
+                "not all 81 squares produced unique hashes for {:?}",
+                piece
+            );
         }
     }
 }

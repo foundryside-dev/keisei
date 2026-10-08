@@ -87,7 +87,7 @@ class TestDistributedConfig:
     def test_defaults(self):
         cfg = DistributedConfig()
         assert cfg.sync_batchnorm is True
-        assert cfg.find_unused_parameters is False
+        assert cfg.find_unused_parameters is True
         assert cfg.gradient_as_bucket_view is True
 
     def test_custom_values(self):

@@ -86,7 +86,7 @@ impl Position {
 
         // --- Row 1: White Rook (col 1) and Bishop (col 7) ---
         // SFEN row 1: "1r5b1" => Rook at col 1, Bishop at col 7
-        place(1, 1, PieceType::Rook,   Color::White);
+        place(1, 1, PieceType::Rook, Color::White);
         place(1, 7, PieceType::Bishop, Color::White);
 
         // --- Row 2: White Pawns ---
@@ -102,7 +102,7 @@ impl Position {
         // --- Row 7: Black Bishop (col 1) and Rook (col 7) ---
         // SFEN row 7: "1B5R1" => Bishop at col 1, Rook at col 7
         place(7, 1, PieceType::Bishop, Color::Black);
-        place(7, 7, PieceType::Rook,   Color::Black);
+        place(7, 7, PieceType::Rook, Color::Black);
 
         // --- Row 8: Black back rank ---
         for (col, &pt) in back_rank.iter().enumerate() {
@@ -215,7 +215,11 @@ impl Position {
 
 impl fmt::Debug for Position {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Position [{:?} to move, hash={:#018x}]", self.current_player, self.hash)?;
+        writeln!(
+            f,
+            "Position [{:?} to move, hash={:#018x}]",
+            self.current_player, self.hash
+        )?;
 
         // Board — 9 rows × 9 columns
         for row in 0u8..9 {
@@ -228,14 +232,14 @@ impl fmt::Debug for Position {
                         let color_char = if p.color() == Color::Black { 'b' } else { 'w' };
                         let prom = if p.is_promoted() { '+' } else { ' ' };
                         let pt_str = match p.piece_type() {
-                            PieceType::Pawn   => "P",
-                            PieceType::Lance  => "L",
+                            PieceType::Pawn => "P",
+                            PieceType::Lance => "L",
                             PieceType::Knight => "N",
                             PieceType::Silver => "S",
-                            PieceType::Gold   => "G",
+                            PieceType::Gold => "G",
                             PieceType::Bishop => "B",
-                            PieceType::Rook   => "R",
-                            PieceType::King   => "K",
+                            PieceType::Rook => "R",
+                            PieceType::King => "K",
                         };
                         write!(f, "{}{}{} ", color_char, pt_str, prom)?;
                     }
@@ -279,7 +283,10 @@ mod tests {
     fn test_startpos_piece_count() {
         let pos = Position::startpos();
         let count = pos.board.iter().filter(|&&b| b != 0).count();
-        assert_eq!(count, 40, "startpos must have exactly 40 pieces on the board");
+        assert_eq!(
+            count, 40,
+            "startpos must have exactly 40 pieces on the board"
+        );
     }
 
     #[test]
@@ -288,11 +295,17 @@ mod tests {
 
         let black_king_sq = pos.find_king(Color::Black).expect("black king not found");
         let expected_black = Square::from_row_col(8, 4).unwrap();
-        assert_eq!(black_king_sq, expected_black, "Black king should be at (8,4)");
+        assert_eq!(
+            black_king_sq, expected_black,
+            "Black king should be at (8,4)"
+        );
 
         let white_king_sq = pos.find_king(Color::White).expect("white king not found");
         let expected_white = Square::from_row_col(0, 4).unwrap();
-        assert_eq!(white_king_sq, expected_white, "White king should be at (0,4)");
+        assert_eq!(
+            white_king_sq, expected_white,
+            "White king should be at (0,4)"
+        );
     }
 
     #[test]
@@ -302,7 +315,9 @@ mod tests {
         // Black pawns on row 6, all 9 columns.
         for col in 0u8..9 {
             let sq = Square::from_row_col(6, col).unwrap();
-            let piece = pos.piece_at(sq).expect(&format!("no Black pawn at (6,{})", col));
+            let piece = pos
+                .piece_at(sq)
+                .unwrap_or_else(|| panic!("no Black pawn at (6,{})", col));
             assert_eq!(piece.piece_type(), PieceType::Pawn);
             assert_eq!(piece.color(), Color::Black);
             assert!(!piece.is_promoted());
@@ -311,7 +326,9 @@ mod tests {
         // White pawns on row 2, all 9 columns.
         for col in 0u8..9 {
             let sq = Square::from_row_col(2, col).unwrap();
-            let piece = pos.piece_at(sq).expect(&format!("no White pawn at (2,{})", col));
+            let piece = pos
+                .piece_at(sq)
+                .unwrap_or_else(|| panic!("no White pawn at (2,{})", col));
             assert_eq!(piece.piece_type(), PieceType::Pawn);
             assert_eq!(piece.color(), Color::White);
             assert!(!piece.is_promoted());
@@ -449,9 +466,11 @@ mod tests {
             for &hpt in &HandPieceType::ALL {
                 pos.set_hand_count(color, hpt, 5);
                 assert_eq!(
-                    pos.hand_count(color, hpt), 5,
+                    pos.hand_count(color, hpt),
+                    5,
                     "hand_count roundtrip failed for {:?}/{:?}",
-                    color, hpt
+                    color,
+                    hpt
                 );
             }
         }
@@ -465,8 +484,14 @@ mod tests {
     fn test_debug_formatting() {
         let pos = Position::startpos();
         let debug_str = format!("{:?}", pos);
-        assert!(debug_str.contains("Position"), "Debug output should contain 'Position'");
-        assert!(debug_str.contains("Black"), "Debug output should mention a color");
+        assert!(
+            debug_str.contains("Position"),
+            "Debug output should contain 'Position'"
+        );
+        assert!(
+            debug_str.contains("Black"),
+            "Debug output should mention a color"
+        );
     }
 
     // ===================================================================
@@ -497,7 +522,10 @@ mod tests {
 
         let board_before = pos.board;
         pos.clear_square(sq);
-        assert_eq!(pos.board, board_before, "clearing an empty square should not change the board");
+        assert_eq!(
+            pos.board, board_before,
+            "clearing an empty square should not change the board"
+        );
     }
 
     /// set_piece followed by clear_square restores the square to empty.
@@ -543,7 +571,12 @@ mod tests {
             let sq = Square::new(idx).unwrap();
             let mut pos = Position::empty();
             pos.set_piece(sq, Piece::new(PieceType::King, Color::Black, false));
-            assert_eq!(pos.find_king(Color::Black), Some(sq), "find_king failed for square index {}", idx);
+            assert_eq!(
+                pos.find_king(Color::Black),
+                Some(sq),
+                "find_king failed for square index {}",
+                idx
+            );
         }
     }
 
@@ -551,9 +584,14 @@ mod tests {
     #[test]
     fn test_piece_at_all_types() {
         let types = [
-            PieceType::Pawn, PieceType::Lance, PieceType::Knight,
-            PieceType::Silver, PieceType::Gold, PieceType::Bishop,
-            PieceType::Rook, PieceType::King,
+            PieceType::Pawn,
+            PieceType::Lance,
+            PieceType::Knight,
+            PieceType::Silver,
+            PieceType::Gold,
+            PieceType::Bishop,
+            PieceType::Rook,
+            PieceType::King,
         ];
         for &pt in &types {
             for &color in &[Color::Black, Color::White] {

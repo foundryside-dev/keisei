@@ -1,5 +1,10 @@
 # torch.compile Evaluation for Training Hot Path
 
+Historical design: the separate train/eval wrappers below were superseded by the
+PPO correctness fixes. Current collection and gradient updates use one eval-mode
+compiled wrapper, preserving the behavior policy's normalization while training
+its parameters. BatchNorm running statistics remain fixed during PPO.
+
 **Issue:** keisei-d1fdc4d92b
 **Date:** 2026-04-03
 **Approach:** A — Compile model + move GAE to GPU

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 from types import SimpleNamespace
+
 import numpy as np
 import pytest
 import torch
@@ -12,7 +13,6 @@ from keisei.config import ConcurrencyConfig
 from keisei.training.concurrent_matches import ConcurrentMatchPool, MatchResult, RoundStats, _MatchSlot
 from keisei.training.opponent_store import OpponentEntry, Role
 from tests._helpers import TinyModel
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -180,6 +180,8 @@ class TestMatchSlot:
             slot._actions.append(torch.randint(0, 11259, (num_envs,)))
             slot._rewards.append(torch.zeros(num_envs))
             slot._dones.append(torch.zeros(num_envs))
+            slot._terminated.append(torch.zeros(num_envs, dtype=torch.bool))
+            slot._log_probs.append(torch.zeros(num_envs))
             slot._masks.append(torch.ones(num_envs, 11259, dtype=torch.bool))
             slot._perspective.append(torch.zeros(num_envs, dtype=torch.long))
 

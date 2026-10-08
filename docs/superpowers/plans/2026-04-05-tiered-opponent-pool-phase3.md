@@ -1,5 +1,9 @@
 # Tiered Opponent Pool Phase 3 Implementation Plan
 
+Historical plan: deferred optimizer flushing below was superseded by the PPO
+correctness fixes. Current Dynamic updates publish matching weights, optimizer
+state and counters together after every update; `checkpoint_flush_every` is removed.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Enable PPO training for Dynamic entries from league match data, persist optimizer state, and activate the Frontier Static promotion pipeline so proven Dynamic entries can graduate to stable benchmarks.

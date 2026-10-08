@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from collections import OrderedDict
 from pathlib import Path
 from typing import Any
@@ -11,9 +12,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-import threading
-
 from keisei.training.model_registry import build_model, get_model_contract, get_obs_channels
+from keisei.training.models.katago_base import KataGoBaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ def load_model_for_showcase(
     model.load_state_dict(state_dict, strict=True)
     model.eval()
 
-    if hasattr(model, "configure_amp"):
+    if isinstance(model, KataGoBaseModel):
         model.configure_amp(enabled=False)
 
     for name, param in model.named_parameters():

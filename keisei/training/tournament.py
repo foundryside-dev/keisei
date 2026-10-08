@@ -345,7 +345,10 @@ class LeagueTournament:
         self, entry_a: OpponentEntry, entry_b: OpponentEntry,
     ) -> bool:
         """D-vs-D or D-vs-RF produces training data (§8.2 / §10.1)."""
-        return is_training_match(entry_a, entry_b)
+        return is_training_match(entry_a, entry_b) and any(
+            entry.role == Role.DYNAMIC and entry.training_enabled
+            and entry.status == EntryStatus.ACTIVE for entry in (entry_a, entry_b)
+        )
 
     # ── Shared result recording ──────────────────────────
 
@@ -369,54 +372,55 @@ class LeagueTournament:
         The caller is responsible for per-path-specific bookkeeping such as
         ``recorded_ids`` tracking and priority scorer state updates.
         """
-        current_a = self.store.get_entry(entry_a_id)
-        current_b = self.store.get_entry(entry_b_id)
-        if current_a is None or current_b is None:
-            return False  # entry deleted from DB
+        # Reserve the writer before rating reads so other workers cannot
+        # publish a result computed from the same stale ratings.
+        with self.store.transaction(immediate=True):
+            current_a = self.store.get_entry(entry_a_id)
+            current_b = self.store.get_entry(entry_b_id)
+            if current_a is None or current_b is None:
+                return False  # entry deleted from DB
 
-        # Entries may have been retired during the round — result is still
-        # valid (snapshot-isolation: active at pairing time = valid).
-        if current_a.status != EntryStatus.ACTIVE or current_b.status != EntryStatus.ACTIVE:
-            logger.debug(
-                "  Recording result for since-retired entry: %s vs %s",
-                current_a.display_name, current_b.display_name,
-            )
+            # Entries may have been retired during the round — result is still
+            # valid (snapshot-isolation: active at pairing time = valid).
+            if current_a.status != EntryStatus.ACTIVE or current_b.status != EntryStatus.ACTIVE:
+                logger.debug(
+                    "  Recording result for since-retired entry: %s vs %s",
+                    current_a.display_name, current_b.display_name,
+                )
 
-        result_score = majority_wins_result(a_wins, b_wins, draws)
-        context = RoleEloTracker.determine_match_context(current_a, current_b)
-        k = (
-            self.role_elo_tracker.k_for_context(context)
-            if self.role_elo_tracker
-            else self.k_factor
-        )
-        new_a_elo, new_b_elo = compute_elo_update(
-            current_a.elo_rating, current_b.elo_rating,
-            result=result_score, k=k,
-        )
-        is_train = is_training_match(current_a, current_b)
-        # §9.1/13.3: store role-specific Elo (not composite) in match
-        # records so analytics see the context-appropriate view.
-        if self.role_elo_tracker:
-            col_a, col_b = self.role_elo_tracker.columns_for_context(
-                current_a, current_b, context,
+            result_score = majority_wins_result(a_wins, b_wins, draws)
+            context = RoleEloTracker.determine_match_context(current_a, current_b)
+            k = (
+                self.role_elo_tracker.k_for_context(context)
+                if self.role_elo_tracker
+                else self.k_factor
             )
-            elo_before_a = getattr(current_a, col_a.value)
-            elo_before_b = getattr(current_b, (col_b or col_a).value)
-            role_new_a, role_new_b = compute_elo_update(
-                elo_before_a, elo_before_b, result=result_score, k=k,
+            new_a_elo, new_b_elo = compute_elo_update(
+                current_a.elo_rating, current_b.elo_rating,
+                result=result_score, k=k,
             )
-        else:
-            elo_before_a = current_a.elo_rating
-            elo_before_b = current_b.elo_rating
-            role_new_a = new_a_elo
-            role_new_b = new_b_elo
-        # keisei-fa604bad63: wrap result + composite Elo + role Elo in one
-        # transaction so a crash between writes cannot leave a recorded match
-        # with partially-applied ratings. transaction() is reentrant — the
-        # nested transactions inside record_result/update_elo/update_role_elo
-        # see _transaction_depth > 1 and skip commit/rollback, so only this
-        # outer block decides atomicity.
-        with self.store.transaction():
+            is_train = is_training_match(current_a, current_b)
+            # §9.1/13.3: store role-specific Elo (not composite) in match
+            # records so analytics see the context-appropriate view.
+            if self.role_elo_tracker:
+                col_a, col_b = self.role_elo_tracker.columns_for_context(
+                    current_a, current_b, context,
+                )
+                elo_before_a = getattr(current_a, col_a.value)
+                elo_before_b = getattr(current_b, (col_b or col_a).value)
+                self.role_elo_tracker.update_from_result(
+                    current_a, current_b, result_score, context,
+                )
+                updated_a = self.store.get_entry(entry_a_id)
+                updated_b = self.store.get_entry(entry_b_id)
+                assert updated_a is not None and updated_b is not None
+                role_new_a = getattr(updated_a, col_a.value)
+                role_new_b = getattr(updated_b, (col_b or col_a).value)
+            else:
+                elo_before_a = current_a.elo_rating
+                elo_before_b = current_b.elo_rating
+                role_new_a = new_a_elo
+                role_new_b = new_b_elo
             self.store.record_result(
                 epoch=epoch,
                 entry_a_id=entry_a_id,
@@ -436,10 +440,6 @@ class LeagueTournament:
             )
             self.store.update_elo(entry_a_id, new_a_elo, epoch=epoch)
             self.store.update_elo(entry_b_id, new_b_elo, epoch=epoch)
-            if self.role_elo_tracker:
-                self.role_elo_tracker.update_from_result(
-                    current_a, current_b, result_score, context,
-                )
         logger.info(
             "  %s vs %s — %dW %dL %dD",
             current_a.display_name, current_b.display_name,
@@ -454,7 +454,8 @@ class LeagueTournament:
             )
         if is_train and rollout is not None and self.dynamic_trainer is not None:
             for i, entry in enumerate([current_a, current_b]):
-                if entry.role == Role.DYNAMIC:
+                if (entry.role == Role.DYNAMIC and entry.training_enabled
+                        and entry.status == EntryStatus.ACTIVE):
                     self.dynamic_trainer.record_match(entry.id, rollout, side=i)
                     if (
                         self.dynamic_trainer.should_update(entry.id)
@@ -481,12 +482,12 @@ class LeagueTournament:
         # set once in __init__ and never reassigned.
         max_cached = self.concurrent_pool.config.max_resident_models
 
-        def _load_fn(entry: OpponentEntry) -> object:
+        def _load_fn(entry: OpponentEntry) -> torch.nn.Module:
             return self.store.load_opponent_cached(
                 entry, device=str(self.device), max_cached=max_cached,
             )
 
-        def _release_fn(model_a: object, model_b: object) -> None:
+        def _release_fn(model_a: torch.nn.Module, model_b: torch.nn.Module) -> None:
             # When using the LRU model cache, the same model object is shared
             # across multiple concurrent slots (e.g. entry1 appears in pairings
             # (1,2) and (1,3)).  release_models() calls model.cpu(), which would

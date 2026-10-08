@@ -10,12 +10,12 @@ import shutil
 import sqlite3
 import threading
 from collections import OrderedDict
+from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from collections.abc import Callable
-from typing import Any, Generator
+from typing import Any, Generator, cast
 
 import torch
 
@@ -341,7 +341,7 @@ class OpponentStore:
         # NOTE: Pins are in-memory only — lost on restart. This is a known
         # limitation; persisting to DB is tracked as keisei-76cc7fdc85.
         self._pinned: set[int] = set()
-        self._model_cache: OrderedDict[tuple[int, str, str], torch.nn.Module] = OrderedDict()
+        self._model_cache: OrderedDict[tuple[int, str, str, str], torch.nn.Module] = OrderedDict()
         self._cache_lock = threading.Lock()
         # Thread-local storage: each thread gets its own SQLite connection,
         # transaction depth counter, and pending filesystem ops list.
@@ -367,13 +367,13 @@ class OpponentStore:
     def _conn(self) -> sqlite3.Connection:
         """Return the calling thread's dedicated connection (created on first access)."""
         try:
-            return self._local.conn
+            return cast(sqlite3.Connection, self._local.conn)
         except AttributeError:
             self._local.conn = self._new_connection(self.db_path)
             self._local.transaction_depth = 0
-            self._local.pending_fs_ops: list[tuple[str, ...]] = []
+            self._local.pending_fs_ops = []
             self._local.lock = threading.RLock()
-            return self._local.conn
+            return cast(sqlite3.Connection, self._local.conn)
 
     @_conn.setter
     def _conn(self, value: sqlite3.Connection) -> None:
@@ -391,12 +391,12 @@ class OpponentStore:
         """
         # Trigger connection init if needed (sets up _local.lock)
         self._conn
-        return self._local.lock
+        return cast(threading.RLock, self._local.lock)
 
     @property
     def _transaction_depth(self) -> int:
         self._conn  # ensure init
-        return self._local.transaction_depth
+        return cast(int, self._local.transaction_depth)
 
     @_transaction_depth.setter
     def _transaction_depth(self, value: int) -> None:
@@ -406,7 +406,7 @@ class OpponentStore:
     @property
     def _pending_fs_ops(self) -> list[tuple[str, ...]]:
         self._conn  # ensure init
-        return self._local.pending_fs_ops
+        return cast(list[tuple[str, ...]], self._local.pending_fs_ops)
 
     @_pending_fs_ops.setter
     def _pending_fs_ops(self, value: list[tuple[str, ...]]) -> None:
@@ -433,10 +433,13 @@ class OpponentStore:
     # ------------------------------------------------------------------
 
     @contextmanager
-    def transaction(self) -> Generator[None, None, None]:
+    def transaction(self, *, immediate: bool = False) -> Generator[None, None, None]:
         """Atomic multi-operation context. Holds lock, defers commit.
 
         Supports nesting: only the outermost transaction commits/rollbacks.
+        immediate=True reserves SQLite's writer before any read, for cross-
+        process read/modify/write operations. Nested calls inherit the outer
+        transaction's reservation.
 
         Important: do NOT mix raw ``with self._lock:`` blocks with nested
         ``self.transaction()`` calls — the transaction tracks depth via
@@ -450,6 +453,8 @@ class OpponentStore:
             self._transaction_depth += 1
             is_outermost = self._transaction_depth == 1
             try:
+                if is_outermost and immediate:
+                    self._conn.execute("BEGIN IMMEDIATE")
                 yield
                 if is_outermost:
                     self._conn.commit()
@@ -887,6 +892,12 @@ class OpponentStore:
     # Model loading
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def checkpoint_version(entry: OpponentEntry) -> str:
+        """Identify an atomic checkpoint replacement, including other workers'."""
+        stat = Path(entry.checkpoint_path).stat()
+        return f"{stat.st_dev}:{stat.st_ino}:{stat.st_size}:{stat.st_mtime_ns}"
+
     def load_opponent(self, entry: OpponentEntry, device: str = "cpu") -> torch.nn.Module:
         """Load an opponent model from a store entry."""
         ckpt = Path(entry.checkpoint_path)
@@ -896,7 +907,16 @@ class OpponentStore:
                 f"(epoch {entry.created_epoch}): {ckpt}"
             )
         model = build_model(entry.architecture, entry.model_params)
-        state_dict = torch.load(ckpt, map_location="cpu", weights_only=True)
+        # Atomic publishers can replace the file while torch.load is running.
+        # Retry until its revision is stable so rollout metadata identifies the
+        # checkpoint that actually supplied these weights.
+        for _ in range(3):
+            revision = self.checkpoint_version(entry)
+            state_dict = torch.load(ckpt, map_location="cpu", weights_only=True)
+            if revision == self.checkpoint_version(entry):
+                break
+        else:
+            raise RuntimeError(f"Checkpoint for entry {entry.id} changed repeatedly while loading")
         # strict=True: entry.architecture + model_params must exactly match the
         # checkpoint's layer structure.  If architecture evolves, entries need
         # migration (re-save with new structure) — silent partial loads via
@@ -904,6 +924,7 @@ class OpponentStore:
         model.load_state_dict(state_dict, strict=True)
         model = model.to(device)
         model.eval()
+        setattr(model, "_keisei_checkpoint_version", revision)
         return model
 
     def load_opponent_cached(
@@ -912,14 +933,22 @@ class OpponentStore:
         """Load with LRU caching.  max_cached=0 disables caching."""
         if max_cached <= 0:
             return self.load_opponent(entry, device=device)
-        key = (entry.id, entry.checkpoint_path, device)
+        revision = self.checkpoint_version(entry)
+        key = (entry.id, entry.checkpoint_path, device, revision)
         with self._cache_lock:
             if key in self._model_cache:
                 self._model_cache.move_to_end(key)
                 return self._model_cache[key]
         # Load outside lock (disk I/O + GPU transfer can be slow)
         model = self.load_opponent(entry, device=device)
+        revision = getattr(model, "_keisei_checkpoint_version", revision)
+        key = (entry.id, entry.checkpoint_path, device, revision)
         with self._cache_lock:
+            # Remove obsolete revisions without mutating models still in use
+            # by active matches. Subsequent matches load the published version.
+            for old_key in list(self._model_cache):
+                if old_key[0] == entry.id and old_key != key:
+                    del self._model_cache[old_key]
             # Re-check after releasing lock — another thread may have loaded same key
             if key in self._model_cache:
                 self._model_cache.move_to_end(key)
@@ -1203,12 +1232,30 @@ class OpponentStore:
     # Optimizer persistence (Phase 3)
     # ------------------------------------------------------------------
 
+    def reserve_dynamic_update(self, entry_id: int) -> bool:
+        """Reserve the database writer while a trainable Dynamic entry publishes.
+
+        Call inside transaction(); its writer lock spans checkpoint publication,
+        preventing another process from retiring/disabling the entry in between.
+        """
+        if self._transaction_depth == 0:
+            raise RuntimeError("reserve_dynamic_update requires an active transaction")
+        cursor = self._conn.execute(
+            "UPDATE league_entries SET update_count = update_count "
+            "WHERE id = ? AND role = ? AND status = ? AND training_enabled = 1",
+            (entry_id, Role.DYNAMIC.value, EntryStatus.ACTIVE.value),
+        )
+        return cursor.rowcount == 1
+
     def save_weights(self, entry_id: int, state_dict: dict[str, Any]) -> None:
         """Save updated model weights for a Dynamic entry.
 
         Per §14: overwrites weights.pt atomically via .tmp + rename.
         Uses transaction rollback safety (backup before overwrite).
         """
+        if any(isinstance(value, torch.Tensor) and not torch.isfinite(value).all()
+               for value in state_dict.values()):
+            raise ValueError("Checkpoint weights must be finite")
         with self.transaction():
             entry = self._get_entry(entry_id)
             if entry is None:
@@ -1221,6 +1268,11 @@ class OpponentStore:
             logger.info(
                 "Saved weights for entry %d -> %s", entry_id, ckpt_path,
             )
+
+        with self._cache_lock:
+            for key in list(self._model_cache):
+                if key[0] == entry_id:
+                    del self._model_cache[key]
 
     def save_optimizer(self, entry_id: int, optimizer_state_dict: dict[str, Any]) -> None:
         """Save an optimizer state dict as optimizer.pt in the entry directory.
@@ -1284,7 +1336,7 @@ class OpponentStore:
         # Optimizer state is self-generated, not from untrusted sources.
         # weights_only=False is needed because Adam state contains Python
         # ints and dicts alongside tensors.
-        return torch.load(opt_path, map_location=device, weights_only=False)
+        return cast(dict[str, Any], torch.load(opt_path, map_location=device, weights_only=False))
 
     def increment_update_count(self, entry_id: int) -> None:
         """Increment the update_count and set last_train_at to now."""

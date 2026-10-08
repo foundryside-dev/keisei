@@ -20,6 +20,8 @@ from keisei.training.match_utils import MatchOutcome, play_batch, play_match
 from keisei.training.opponent_store import EloColumn, EntryStatus, OpponentEntry, OpponentStore, Role
 from keisei.training.tier_managers import FrontierManager
 from keisei.training.tournament import LeagueTournament
+from tests._helpers import TinyModel as _TinyModel
+from tests._helpers import make_rollout as _make_synthetic_rollout
 
 pytestmark = pytest.mark.integration
 
@@ -66,7 +68,6 @@ class MockVecEnv:
 
     def step(self, actions: np.ndarray) -> SimpleNamespace:
         self._step_count += 1
-        old_player = self._current_player
         self._current_player = 1 - self._current_player
 
         terminated = self._step_count >= self.end_ply
@@ -503,8 +504,6 @@ class TestTournamentTrainingTrigger:
 # Helpers for end-to-end tests (Task 15) — shared via conftest.py
 # ---------------------------------------------------------------------------
 
-from tests._helpers import TinyModel as _TinyModel, make_rollout as _make_synthetic_rollout
-
 
 # ---------------------------------------------------------------------------
 # Test 1: Full Dynamic training cycle (Task 15)
@@ -538,7 +537,7 @@ class TestFullDynamicTrainingCycle:
                 epoch=1,
                 role=Role.DYNAMIC,
             )
-            entry_b = store.add_entry(
+            store.add_entry(
                 model=model_b,
                 architecture="tiny",
                 model_params={},
@@ -549,7 +548,6 @@ class TestFullDynamicTrainingCycle:
         # --- Snapshot weights before update ---
         ckpt_a_path = Path(entry_a.checkpoint_path)
         before_hash = hashlib.md5(ckpt_a_path.read_bytes()).hexdigest()
-        before_mtime = ckpt_a_path.stat().st_mtime
 
         # --- DynamicTrainer with immediate update ---
         config = DynamicConfig(update_every_matches=1)

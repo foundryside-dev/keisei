@@ -1,20 +1,18 @@
 """Tests for tier managers: Frontier, RecentFixed, Dynamic."""
 
-import sqlite3
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 import torch
 
-from keisei.config import FrontierStaticConfig, RecentFixedConfig, DynamicConfig
+from keisei.config import DynamicConfig, FrontierStaticConfig, RecentFixedConfig
 from keisei.db import init_db
 from keisei.training.frontier_promoter import FrontierPromoter
-from keisei.training.opponent_store import EloColumn, OpponentEntry, OpponentStore, Role, EntryStatus
+from keisei.training.opponent_store import EloColumn, EntryStatus, OpponentStore, Role
 from keisei.training.tier_managers import (
+    DynamicManager,
     FrontierManager,
     RecentFixedManager,
-    DynamicManager,
     ReviewOutcome,
 )
 
@@ -288,7 +286,7 @@ class TestDynamicManager:
         ))
         e1 = _add_entry(store, 1, role=Role.DYNAMIC, elo=800)
         e2 = _add_entry(store, 2, role=Role.DYNAMIC, elo=1000)
-        e3 = _add_entry(store, 3, role=Role.DYNAMIC, elo=1200)
+        _add_entry(store, 3, role=Role.DYNAMIC, elo=1200)
         with store.transaction():
             store._conn.execute(
                 "UPDATE league_entries SET protection_remaining = 10 WHERE id = ?", (e1.id,)
@@ -304,7 +302,7 @@ class TestDynamicManager:
             slots=2, protection_matches=0, min_games_before_eviction=0,
         ))
         e1 = _add_entry(store, 1, role=Role.DYNAMIC, elo=800)
-        e2 = _add_entry(store, 2, role=Role.DYNAMIC, elo=1200)
+        _add_entry(store, 2, role=Role.DYNAMIC, elo=1200)
         evicted = mgr.evict_weakest()
         assert evicted is not None
         assert evicted.id == e1.id
@@ -453,7 +451,6 @@ class TestFrontierReview:
 
         # New Frontier entry should exist (cloned from candidate)
         frontier_after = store.list_by_role(Role.FRONTIER_STATIC)
-        frontier_after_ids = {e.id for e in frontier_after}
 
         # At least one new Frontier entry should be a clone of the candidate
         cloned_from_candidate = [
@@ -634,7 +631,7 @@ class TestFrontierReview:
         # Proximity dominates: B is much closer, should be retired even though fresh
         f_ancient = _add_entry(store, epoch=0, role=Role.FRONTIER_STATIC, elo=1200)
         f_close = _add_entry(store, epoch=250, role=Role.FRONTIER_STATIC, elo=1050)
-        f_mid = _add_entry(store, epoch=250, role=Role.FRONTIER_STATIC, elo=900)
+        _add_entry(store, epoch=250, role=Role.FRONTIER_STATIC, elo=900)
 
         candidate = _add_entry(store, epoch=300, role=Role.DYNAMIC, elo=1050)
         with store.transaction():
@@ -859,7 +856,7 @@ class TestDynamicEvictDisabled:
         ))
         # All entries have 0 games_played (< 100), so normally ALL protected
         e1 = _add_entry(store, 1, role=Role.DYNAMIC, elo=800)
-        e2 = _add_entry(store, 2, role=Role.DYNAMIC, elo=1200)
+        _add_entry(store, 2, role=Role.DYNAMIC, elo=1200)
 
         # Without disabled set: no eligible entries
         assert mgr.evict_weakest() is None

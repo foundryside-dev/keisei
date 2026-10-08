@@ -12,11 +12,11 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from keisei.config import ConcurrencyConfig, MatchSchedulerConfig, RoleEloConfig
+from keisei.config import ConcurrencyConfig, MatchSchedulerConfig
 from keisei.db import init_db
 from keisei.training.concurrent_matches import (
     ConcurrentMatchPool,
@@ -25,8 +25,8 @@ from keisei.training.concurrent_matches import (
 )
 from keisei.training.match_scheduler import MatchScheduler
 from keisei.training.opponent_store import (
-    EntryStatus,
     EloColumn,
+    EntryStatus,
     OpponentEntry,
     OpponentStore,
     Role,
@@ -68,13 +68,13 @@ def _insert_entry(conn: sqlite3.Connection, entry: OpponentEntry) -> None:
     conn.execute(
         """INSERT INTO league_entries
            (id, display_name, flavour_facts, architecture, model_params,
-            checkpoint_path, elo_rating, created_epoch, games_played, created_at, role)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            checkpoint_path, elo_rating, created_epoch, games_played, created_at, role, training_enabled)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             entry.id, entry.display_name, json.dumps(entry.flavour_facts),
             entry.architecture, json.dumps(entry.model_params),
             entry.checkpoint_path, entry.elo_rating, entry.created_epoch,
-            entry.games_played, entry.created_at, entry.role.value,
+            entry.games_played, entry.created_at, entry.role.value, int(entry.training_enabled),
         ),
     )
     conn.commit()

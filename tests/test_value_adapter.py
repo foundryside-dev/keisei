@@ -6,7 +6,6 @@ import torch
 from keisei.training.value_adapter import (
     MultiHeadValueAdapter,
     ScalarValueAdapter,
-    ValueHeadAdapter,
     get_value_adapter,
 )
 
@@ -77,7 +76,7 @@ class TestMultiHeadValueAdapter:
         adapter = MultiHeadValueAdapter()
         value_logits = torch.tensor([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], requires_grad=True)
         value_cats = torch.tensor([-1, -1])  # all non-terminal
-        score_pred = torch.tensor([[0.5], [0.3]])
+        score_pred = torch.tensor([[0.5], [0.3]], requires_grad=True)
         score_targets = torch.tensor([0.1, 0.2])
         loss = adapter.compute_value_loss(
             value_logits, returns=None,
@@ -87,7 +86,8 @@ class TestMultiHeadValueAdapter:
         # value_loss component should be zero; score_loss should still be positive
         assert not loss.isnan(), "Loss should not be NaN with all-ignored value_cats"
         loss.backward()
-        assert value_logits.grad is not None, "Gradient graph should be preserved"
+        assert value_logits.grad is None, "Ignored value head must be disconnected"
+        assert score_pred.grad is not None
 
     def test_score_loss_uses_all_samples(self):
         """Score loss should use direct MSE over all samples (no NaN masking)."""

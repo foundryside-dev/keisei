@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from keisei.config import PriorityScorerConfig
 from keisei.training.opponent_store import EntryStatus, OpponentEntry, Role
 from keisei.training.priority_scorer import PriorityScorer

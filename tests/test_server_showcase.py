@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 import contextlib
-import json
-
 from concurrent.futures import CancelledError
 from pathlib import Path
 from unittest.mock import patch
@@ -12,15 +10,14 @@ import pytest
 from starlette.testclient import TestClient
 
 from keisei.db import init_db, write_training_state
-from keisei.server.app import create_app, TEST_ALLOWED_HOSTS
 from keisei.db.showcase import (
-    queue_match,
     claim_next_match,
     create_showcase_game,
-    write_showcase_move,
-    write_heartbeat,
+    queue_match,
     read_queue,
+    write_showcase_move,
 )
+from keisei.server.app import TEST_ALLOWED_HOSTS, create_app
 
 pytestmark = pytest.mark.integration
 
@@ -96,8 +93,14 @@ class TestShowcaseCommands:
     def test_request_match_creates_queue_entry(self, server_db: str) -> None:
         from keisei.db import _connect
         conn = _connect(server_db)
-        conn.execute("INSERT INTO league_entries (id, display_name, architecture, model_params, checkpoint_path, elo_rating, status, created_epoch) VALUES (1, 'A', 'resnet', '{}', '/tmp/a.pt', 1500, 'active', 0)")
-        conn.execute("INSERT INTO league_entries (id, display_name, architecture, model_params, checkpoint_path, elo_rating, status, created_epoch) VALUES (2, 'B', 'resnet', '{}', '/tmp/b.pt', 1480, 'active', 0)")
+        conn.execute(
+            "INSERT INTO league_entries (id, display_name, architecture, model_params, "
+            "checkpoint_path, elo_rating, status, created_epoch) VALUES (1, 'A', 'resnet', '{}', "
+            "'/tmp/a.pt', 1500, 'active', 0)")
+        conn.execute(
+            "INSERT INTO league_entries (id, display_name, architecture, model_params, "
+            "checkpoint_path, elo_rating, status, created_epoch) VALUES (2, 'B', 'resnet', '{}', "
+            "'/tmp/b.pt', 1480, 'active', 0)")
         conn.commit()
         conn.close()
 
@@ -124,7 +127,10 @@ class TestShowcaseCommands:
     def test_request_match_validates_self_match(self, server_db: str) -> None:
         from keisei.db import _connect
         conn = _connect(server_db)
-        conn.execute("INSERT INTO league_entries (id, display_name, architecture, model_params, checkpoint_path, elo_rating, status, created_epoch) VALUES (1, 'A', 'resnet', '{}', '/tmp/a.pt', 1500, 'active', 0)")
+        conn.execute(
+            "INSERT INTO league_entries (id, display_name, architecture, model_params, "
+            "checkpoint_path, elo_rating, status, created_epoch) VALUES (1, 'A', 'resnet', '{}', "
+            "'/tmp/a.pt', 1500, 'active', 0)")
         conn.commit()
         conn.close()
 

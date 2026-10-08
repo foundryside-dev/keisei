@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from scripts.profile_hotpath import create_model_at_scale, SCALES
+from scripts.profile_hotpath import create_model_at_scale
 
 
 def test_create_model_small_scale():
@@ -33,7 +33,7 @@ def test_invalid_scale_raises():
 
 def test_profile_loss_components_returns_results():
     """Smoke test: loss profiling returns TimingResult list (CPU-only)."""
-    from scripts.profile_hotpath import profile_loss_components, TimingResult
+    from scripts.profile_hotpath import TimingResult, profile_loss_components
 
     # Can't test CUDA profiling without GPU — just verify function signature
     # and that it returns a list of TimingResult when given a CPU device.

@@ -1,12 +1,8 @@
 """Tests for the showcase sidecar runner."""
 from __future__ import annotations
 
-import json
 import os
-import threading
-import time
 from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -15,13 +11,12 @@ import torch
 
 from keisei.db import init_db
 from keisei.db.showcase import (
-    queue_match,
     claim_next_match,
-    read_active_showcase_game,
-    read_showcase_moves_since,
-    read_heartbeat,
-    cleanup_orphaned_games,
     create_showcase_game,
+    queue_match,
+    read_active_showcase_game,
+    read_heartbeat,
+    read_showcase_moves_since,
 )
 from keisei.showcase.runner import ShowcaseRunner
 
@@ -112,7 +107,7 @@ class TestShowcaseRunner:
 
     def test_run_single_game(self, db: str, mock_spectator_env: MagicMock, mock_model: MagicMock) -> None:
         """Runner plays a complete game and writes moves to DB."""
-        qid = queue_match(db, "e1", "e2", "normal")
+        queue_match(db, "e1", "e2", "normal")
 
         runner = ShowcaseRunner(db_path=db)
 

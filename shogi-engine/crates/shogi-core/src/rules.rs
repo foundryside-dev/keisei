@@ -26,7 +26,10 @@ pub fn is_uchi_fu_zume(game: &mut GameState, to: Square, color: Color) -> bool {
     let prev_board_byte = game.position.board[to.index()];
 
     // The square must be empty for a drop.
-    debug_assert_eq!(prev_board_byte, 0, "is_uchi_fu_zume: target square not empty");
+    debug_assert_eq!(
+        prev_board_byte, 0,
+        "is_uchi_fu_zume: target square not empty"
+    );
 
     // --- Simulate the pawn drop ---
     let pawn = Piece::new(PieceType::Pawn, color, false);
@@ -101,9 +104,10 @@ fn opponent_can_escape(
 
             // Can't move to a square occupied by own piece.
             if let Some(p) = game.position.piece_at(adj_sq)
-                && p.color() == opponent {
-                    continue;
-                }
+                && p.color() == opponent
+            {
+                continue;
+            }
 
             // Can't move to a square attacked by the dropper.
             if game.attack_map[dropper as usize][adj_sq.index()] > 0 {
@@ -182,9 +186,10 @@ fn piece_attacks_square(pos: &Position, from: Square, piece: Piece, target: Squa
     for delta in &steps {
         if !would_wrap_file(from, *delta)
             && let Some(sq) = from.offset(*delta)
-                && sq == target {
-                    return true;
-                }
+            && sq == target
+        {
+            return true;
+        }
     }
 
     // Slide attacks.
@@ -223,7 +228,7 @@ fn piece_attacks_square(pos: &Position, from: Square, piece: Piece, target: Squa
 /// - `Some(GameResult::Repetition)` if the position has been repeated 4 times
 ///   and neither side was continuously giving check.
 /// - `Some(GameResult::PerpetualCheck { winner })` if one side was always
-///   giving check at matching plies.
+///   giving check on every move throughout the repetition interval.
 /// - `None` if the repetition count is below 4.
 pub fn check_sennichite(game: &GameState) -> Option<GameResult> {
     let current_hash = game.position.hash;
@@ -233,41 +238,42 @@ pub fn check_sennichite(game: &GameState) -> Option<GameResult> {
         return None;
     }
 
-    // Fourfold repetition detected. Walk through hash_history to find matching plies.
-    // Also consider the current position (not yet in history).
-    let mut matching_plies: Vec<usize> = Vec::new();
-    for (ply, &h) in game.hash_history.iter().enumerate() {
-        if h == current_hash {
-            matching_plies.push(ply);
-        }
-    }
-    // The current position (ply = hash_history.len()) is also a match.
-    // check_history doesn't cover the current ply yet, so we compute it.
-
-    // Check if all matching plies had the side-to-move in check.
-    // At each matching ply, check_history[ply] tells us if the side-to-move was in check.
-    // If the side-to-move was in check, it means the OPPONENT was giving check.
-    if matching_plies.is_empty() {
-        // Only the current position has this hash repeated — shouldn't reach count >= 4
-        // with no history matches, but be defensive.
+    // The current position is the fourth occurrence; the third-most-recent
+    // matching history entry starts its repetition interval.
+    let Some((start_ply, _)) = game
+        .hash_history
+        .iter()
+        .enumerate()
+        .rev()
+        .filter(|(_, hash)| **hash == current_hash)
+        .nth(2)
+    else {
         return Some(GameResult::Repetition);
-    }
+    };
+    let current_ply = game.hash_history.len();
 
-    let all_checks = matching_plies.iter().all(|&ply| {
-        ply < game.check_history.len() && game.check_history[ply]
-    });
-
-    if all_checks {
-        // Determine who was giving check: at matching plies, the side-to-move was
-        // in check, meaning the opponent of the side-to-move was giving check.
-        // Since positions with the same hash have the same side-to-move, the
-        // checker is consistent across all matching plies.
-        //
-        // The current position has the same side-to-move. The opponent of the
-        // current side-to-move was the one perpetually checking.
-        let checking_side = game.position.current_player.opponent();
-        let winner = checking_side.opponent(); // the victim wins
-        return Some(GameResult::PerpetualCheck { winner });
+    // Inspect the position AFTER every move in the interval, for either
+    // possible victim. Checking only matching hashes misses interruptions and
+    // also misses perpetual checks when the repeated side-to-move is the checker.
+    // check_history records pre-move positions, so include the current position
+    // separately and exclude the first occurrence's incoming move.
+    for victim in [Color::Black, Color::White] {
+        let all_checks = (start_ply + 1..=current_ply).all(|ply| {
+            let player = if (current_ply - ply).is_multiple_of(2) {
+                game.position.current_player
+            } else {
+                game.position.current_player.opponent()
+            };
+            player != victim
+                || if ply == current_ply {
+                    game.is_in_check()
+                } else {
+                    game.check_history[ply]
+                }
+        });
+        if all_checks {
+            return Some(GameResult::PerpetualCheck { winner: victim });
+        }
     }
 
     Some(GameResult::Repetition)
@@ -406,19 +412,19 @@ fn piece_impasse_value(pt: PieceType) -> u8 {
 pub fn piece_value(pt: PieceType, promoted: bool) -> i32 {
     match (pt, promoted) {
         (PieceType::Pawn, false) => 1,
-        (PieceType::Pawn, true) => 7,     // Tokin
+        (PieceType::Pawn, true) => 7, // Tokin
         (PieceType::Lance, false) => 3,
         (PieceType::Lance, true) => 6,
         (PieceType::Knight, false) => 4,
         (PieceType::Knight, true) => 6,
         (PieceType::Silver, false) => 5,
         (PieceType::Silver, true) => 6,
-        (PieceType::Gold, _) => 6,         // Gold cannot promote; defensive fallback
+        (PieceType::Gold, _) => 6, // Gold cannot promote; defensive fallback
         (PieceType::Bishop, false) => 8,
-        (PieceType::Bishop, true) => 10,   // Horse
+        (PieceType::Bishop, true) => 10, // Horse
         (PieceType::Rook, false) => 10,
-        (PieceType::Rook, true) => 12,     // Dragon
-        (PieceType::King, _) => 0,         // King excluded: never captured, adds same to both
+        (PieceType::Rook, true) => 12, // Dragon
+        (PieceType::King, _) => 0,     // King excluded: never captured, adds same to both
     }
 }
 
@@ -491,6 +497,89 @@ mod tests {
         );
     }
 
+    fn result_after_rook_repetition(
+        sfen: &str,
+        cycle: [[u8; 4]; 4],
+        mirror: bool,
+        max_ply: u32,
+    ) -> GameResult {
+        let mut game = GameState::from_sfen(sfen, max_ply).unwrap();
+        for ply in 0..12 {
+            let [from_row, from_col, to_row, to_col] = cycle[ply % 4];
+            let square = |row, col| {
+                if mirror {
+                    Square::from_row_col(8 - row, 8 - col).unwrap()
+                } else {
+                    Square::from_row_col(row, col).unwrap()
+                }
+            };
+            let mv = crate::types::Move::Board {
+                from: square(from_row, from_col),
+                to: square(to_row, to_col),
+                promote: false,
+            };
+            assert!(game.legal_moves().contains(&mv));
+            game.make_move(mv);
+            game.check_termination();
+            if ply < 11 {
+                assert_eq!(game.result, GameResult::InProgress);
+            }
+        }
+        game.result
+    }
+
+    #[test]
+    fn test_intermittent_checks_are_a_repetition_draw() {
+        // The repeated position is in check, but every other rook move is not
+        // a check. Matching-position checks alone do not establish perpetuity.
+        let cycle = [[0, 4, 0, 5], [2, 4, 2, 3], [0, 5, 0, 4], [2, 3, 2, 4]];
+        for (sfen, mirror) in [
+            ("4k4/9/4R4/9/9/9/9/9/4K4 w - 1", false),
+            ("4k4/9/9/9/9/9/4r4/9/4K4 b - 1", true),
+        ] {
+            assert_eq!(
+                result_after_rook_repetition(sfen, cycle, mirror, 500),
+                GameResult::Repetition,
+            );
+        }
+    }
+
+    #[test]
+    fn test_perpetual_check_when_checker_is_to_move_at_repetition() {
+        // Every rook move checks, although the repeated position has the
+        // checking side to move and that side's own king is never in check.
+        let cycle = [[2, 4, 2, 5], [0, 5, 0, 4], [2, 5, 2, 4], [0, 4, 0, 5]];
+        for (sfen, mirror, winner) in [
+            ("5k3/9/4R4/9/9/9/9/9/4K4 b - 1", false, Color::White),
+            ("4k4/9/9/9/9/9/4r4/9/3K5 w - 1", true, Color::Black),
+        ] {
+            assert_eq!(
+                result_after_rook_repetition(sfen, cycle, mirror, 500),
+                GameResult::PerpetualCheck { winner },
+            );
+        }
+    }
+
+    #[test]
+    fn test_repetition_on_max_ply_remains_terminal() {
+        let intermittent = [[0, 4, 0, 5], [2, 4, 2, 3], [0, 5, 0, 4], [2, 3, 2, 4]];
+        assert_eq!(
+            result_after_rook_repetition("4k4/9/4R4/9/9/9/9/9/4K4 w - 1", intermittent, false, 12),
+            GameResult::Repetition,
+        );
+    }
+
+    #[test]
+    fn test_perpetual_check_on_max_ply_remains_terminal() {
+        let continuous = [[2, 4, 2, 5], [0, 5, 0, 4], [2, 5, 2, 4], [0, 4, 0, 5]];
+        assert_eq!(
+            result_after_rook_repetition("5k3/9/4R4/9/9/9/9/9/4K4 b - 1", continuous, false, 12),
+            GameResult::PerpetualCheck {
+                winner: Color::White
+            },
+        );
+    }
+
     #[test]
     fn test_impasse_requires_both_kings_entered() {
         let gs = GameState::new();
@@ -541,10 +630,16 @@ mod tests {
         // not Black's promotion zone). Black's promotion zone is rows 0-2, and
         // Black has 0 pieces there initially.
         let black_in_zone = count_pieces_in_promotion_zone(&pos, Color::Black);
-        assert_eq!(black_in_zone, 0, "Black has no pieces in promotion zone at start");
+        assert_eq!(
+            black_in_zone, 0,
+            "Black has no pieces in promotion zone at start"
+        );
 
         let white_in_zone = count_pieces_in_promotion_zone(&pos, Color::White);
-        assert_eq!(white_in_zone, 0, "White has no pieces in promotion zone at start");
+        assert_eq!(
+            white_in_zone, 0,
+            "White has no pieces in promotion zone at start"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -734,8 +829,8 @@ mod tests {
         for _ in 0..3 {
             gs.make_move(bk_down); // Black king to (7,4)
             gs.make_move(wk_down); // White king to (1,4)
-            gs.make_move(bk_up);   // Black king to (8,4)
-            gs.make_move(wk_up);   // White king to (0,4) → start position repeated
+            gs.make_move(bk_up); // Black king to (8,4)
+            gs.make_move(wk_up); // White king to (0,4) → start position repeated
         }
 
         // Now the start position hash should have count >= 4
@@ -886,7 +981,10 @@ mod tests {
         }
 
         let result = check_sennichite(&gs);
-        assert!(result.is_some(), "Should detect repetition with perpetual check");
+        assert!(
+            result.is_some(),
+            "Should detect repetition with perpetual check"
+        );
         match result.unwrap() {
             GameResult::PerpetualCheck { winner } => {
                 // The side giving check (Black) loses; the victim (White) wins.
@@ -896,10 +994,7 @@ mod tests {
                     "White (the victim of perpetual check) should win"
                 );
             }
-            other => panic!(
-                "Expected PerpetualCheck, got {:?}",
-                other
-            ),
+            other => panic!("Expected PerpetualCheck, got {:?}", other),
         }
     }
 
@@ -913,23 +1008,51 @@ mod tests {
         // Unpromoted
         assert_eq!(piece_value(PieceType::Pawn, false), 1, "Pawn unpromoted");
         assert_eq!(piece_value(PieceType::Lance, false), 3, "Lance unpromoted");
-        assert_eq!(piece_value(PieceType::Knight, false), 4, "Knight unpromoted");
-        assert_eq!(piece_value(PieceType::Silver, false), 5, "Silver unpromoted");
+        assert_eq!(
+            piece_value(PieceType::Knight, false),
+            4,
+            "Knight unpromoted"
+        );
+        assert_eq!(
+            piece_value(PieceType::Silver, false),
+            5,
+            "Silver unpromoted"
+        );
         assert_eq!(piece_value(PieceType::Gold, false), 6, "Gold");
-        assert_eq!(piece_value(PieceType::Bishop, false), 8, "Bishop unpromoted");
+        assert_eq!(
+            piece_value(PieceType::Bishop, false),
+            8,
+            "Bishop unpromoted"
+        );
         assert_eq!(piece_value(PieceType::Rook, false), 10, "Rook unpromoted");
         assert_eq!(piece_value(PieceType::King, false), 0, "King unpromoted");
 
         // Promoted
-        assert_eq!(piece_value(PieceType::Pawn, true), 7, "Tokin (promoted pawn)");
+        assert_eq!(
+            piece_value(PieceType::Pawn, true),
+            7,
+            "Tokin (promoted pawn)"
+        );
         assert_eq!(piece_value(PieceType::Lance, true), 6, "Promoted lance");
         assert_eq!(piece_value(PieceType::Knight, true), 6, "Promoted knight");
         assert_eq!(piece_value(PieceType::Silver, true), 6, "Promoted silver");
         // Gold cannot promote in standard Shogi; this arm is a defensive fallback,
         // intentionally equal to the unpromoted value.
-        assert_eq!(piece_value(PieceType::Gold, true), 6, "Gold (promoted arm — defensive fallback)");
-        assert_eq!(piece_value(PieceType::Bishop, true), 10, "Horse (promoted bishop)");
-        assert_eq!(piece_value(PieceType::Rook, true), 12, "Dragon (promoted rook)");
+        assert_eq!(
+            piece_value(PieceType::Gold, true),
+            6,
+            "Gold (promoted arm — defensive fallback)"
+        );
+        assert_eq!(
+            piece_value(PieceType::Bishop, true),
+            10,
+            "Horse (promoted bishop)"
+        );
+        assert_eq!(
+            piece_value(PieceType::Rook, true),
+            12,
+            "Dragon (promoted rook)"
+        );
         assert_eq!(piece_value(PieceType::King, true), 0, "King promoted arm");
     }
 
@@ -938,8 +1061,14 @@ mod tests {
     /// King is excluded because it has value 0 in both states.
     #[test]
     fn test_piece_value_promotion_increases_value() {
-        for &pt in &[PieceType::Pawn, PieceType::Lance, PieceType::Knight,
-                     PieceType::Silver, PieceType::Bishop, PieceType::Rook] {
+        for &pt in &[
+            PieceType::Pawn,
+            PieceType::Lance,
+            PieceType::Knight,
+            PieceType::Silver,
+            PieceType::Bishop,
+            PieceType::Rook,
+        ] {
             assert!(
                 piece_value(pt, true) > piece_value(pt, false),
                 "{:?}: promoted value should exceed unpromoted",
@@ -958,8 +1087,14 @@ mod tests {
         let pos = Position::startpos();
         let black_balance = material_balance(&pos, Color::Black);
         let white_balance = material_balance(&pos, Color::White);
-        assert_eq!(black_balance, 0, "Black material balance at startpos should be 0");
-        assert_eq!(white_balance, 0, "White material balance at startpos should be 0");
+        assert_eq!(
+            black_balance, 0,
+            "Black material balance at startpos should be 0"
+        );
+        assert_eq!(
+            white_balance, 0,
+            "White material balance at startpos should be 0"
+        );
     }
 
     /// Perspective antisymmetry: balance(pos, Black) == -balance(pos, White).
@@ -968,13 +1103,19 @@ mod tests {
     fn test_material_balance_perspective_negation() {
         // Use an asymmetric position so the property is non-trivially exercised
         let mut pos2 = Position::empty();
-        pos2.set_piece(Square::from_row_col(8, 4).unwrap(),
-            Piece::new(PieceType::King, Color::Black, false));
-        pos2.set_piece(Square::from_row_col(0, 4).unwrap(),
-            Piece::new(PieceType::King, Color::White, false));
+        pos2.set_piece(
+            Square::from_row_col(8, 4).unwrap(),
+            Piece::new(PieceType::King, Color::Black, false),
+        );
+        pos2.set_piece(
+            Square::from_row_col(0, 4).unwrap(),
+            Piece::new(PieceType::King, Color::White, false),
+        );
         // Black has an extra rook
-        pos2.set_piece(Square::from_row_col(4, 0).unwrap(),
-            Piece::new(PieceType::Rook, Color::Black, false));
+        pos2.set_piece(
+            Square::from_row_col(4, 0).unwrap(),
+            Piece::new(PieceType::Rook, Color::Black, false),
+        );
         pos2.hash = pos2.compute_hash();
         assert_eq!(
             material_balance(&pos2, Color::Black),
@@ -987,67 +1128,99 @@ mod tests {
     #[test]
     fn test_material_balance_black_has_extra_rook() {
         let mut pos = Position::empty();
-        pos.set_piece(Square::from_row_col(8, 4).unwrap(),
-            Piece::new(PieceType::King, Color::Black, false));
-        pos.set_piece(Square::from_row_col(0, 4).unwrap(),
-            Piece::new(PieceType::King, Color::White, false));
-        pos.set_piece(Square::from_row_col(4, 0).unwrap(),
-            Piece::new(PieceType::Rook, Color::Black, false));
+        pos.set_piece(
+            Square::from_row_col(8, 4).unwrap(),
+            Piece::new(PieceType::King, Color::Black, false),
+        );
+        pos.set_piece(
+            Square::from_row_col(0, 4).unwrap(),
+            Piece::new(PieceType::King, Color::White, false),
+        );
+        pos.set_piece(
+            Square::from_row_col(4, 0).unwrap(),
+            Piece::new(PieceType::Rook, Color::Black, false),
+        );
         pos.hash = pos.compute_hash();
 
         let bal = material_balance(&pos, Color::Black);
-        assert_eq!(bal, piece_value(PieceType::Rook, false),
-            "Black with extra rook should have balance = rook value");
+        assert_eq!(
+            bal,
+            piece_value(PieceType::Rook, false),
+            "Black with extra rook should have balance = rook value"
+        );
     }
 
     /// Hand pieces count toward material balance.
     #[test]
     fn test_material_balance_hand_pieces_counted() {
         let mut pos = Position::empty();
-        pos.set_piece(Square::from_row_col(8, 4).unwrap(),
-            Piece::new(PieceType::King, Color::Black, false));
-        pos.set_piece(Square::from_row_col(0, 4).unwrap(),
-            Piece::new(PieceType::King, Color::White, false));
+        pos.set_piece(
+            Square::from_row_col(8, 4).unwrap(),
+            Piece::new(PieceType::King, Color::Black, false),
+        );
+        pos.set_piece(
+            Square::from_row_col(0, 4).unwrap(),
+            Piece::new(PieceType::King, Color::White, false),
+        );
         // Give Black a gold in hand
         pos.set_hand_count(Color::Black, HandPieceType::Gold, 1);
         pos.hash = pos.compute_hash();
 
         let bal = material_balance(&pos, Color::Black);
-        assert_eq!(bal, piece_value(PieceType::Gold, false),
-            "Gold in hand should contribute its value to material balance");
+        assert_eq!(
+            bal,
+            piece_value(PieceType::Gold, false),
+            "Gold in hand should contribute its value to material balance"
+        );
     }
 
     /// Promoted pieces use promoted value, not base value.
     #[test]
     fn test_material_balance_promoted_piece_uses_promoted_value() {
         let mut pos = Position::empty();
-        pos.set_piece(Square::from_row_col(8, 4).unwrap(),
-            Piece::new(PieceType::King, Color::Black, false));
-        pos.set_piece(Square::from_row_col(0, 4).unwrap(),
-            Piece::new(PieceType::King, Color::White, false));
+        pos.set_piece(
+            Square::from_row_col(8, 4).unwrap(),
+            Piece::new(PieceType::King, Color::Black, false),
+        );
+        pos.set_piece(
+            Square::from_row_col(0, 4).unwrap(),
+            Piece::new(PieceType::King, Color::White, false),
+        );
         // Black has a Dragon (promoted rook) on board
-        pos.set_piece(Square::from_row_col(4, 0).unwrap(),
-            Piece::new(PieceType::Rook, Color::Black, true));
+        pos.set_piece(
+            Square::from_row_col(4, 0).unwrap(),
+            Piece::new(PieceType::Rook, Color::Black, true),
+        );
         pos.hash = pos.compute_hash();
 
         let bal = material_balance(&pos, Color::Black);
-        assert_eq!(bal, piece_value(PieceType::Rook, true),
-            "Dragon (promoted rook) should be valued at promoted rook value (12), not 10");
+        assert_eq!(
+            bal,
+            piece_value(PieceType::Rook, true),
+            "Dragon (promoted rook) should be valued at promoted rook value (12), not 10"
+        );
     }
 
     /// King is excluded from material balance.
     #[test]
     fn test_material_balance_king_excluded() {
         let mut pos = Position::empty();
-        pos.set_piece(Square::from_row_col(8, 4).unwrap(),
-            Piece::new(PieceType::King, Color::Black, false));
-        pos.set_piece(Square::from_row_col(0, 4).unwrap(),
-            Piece::new(PieceType::King, Color::White, false));
+        pos.set_piece(
+            Square::from_row_col(8, 4).unwrap(),
+            Piece::new(PieceType::King, Color::Black, false),
+        );
+        pos.set_piece(
+            Square::from_row_col(0, 4).unwrap(),
+            Piece::new(PieceType::King, Color::White, false),
+        );
         pos.hash = pos.compute_hash();
 
         // Only kings on board — balance must be 0 (kings excluded)
-        assert_eq!(material_balance(&pos, Color::Black), 0,
-            "Kings-only position should have balance 0");
+        assert_eq!(
+            material_balance(&pos, Color::Black),
+            0,
+            "Kings-only position should have balance 0"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1062,7 +1235,10 @@ mod tests {
         pos.set_hand_count(Color::Black, HandPieceType::Pawn, 2);
         let score = compute_impasse_score(&pos, Color::Black);
         // Starting: 27. +2 pawns in hand = 29.
-        assert_eq!(score, 29, "Black should have 29 points with 2 extra pawns in hand");
+        assert_eq!(
+            score, 29,
+            "Black should have 29 points with 2 extra pawns in hand"
+        );
     }
 
     /// Test impasse scoring counts promoted pieces at their base value.
@@ -1107,8 +1283,15 @@ mod tests {
         // Place 10 Black pieces in rows 0-2 (Black's promotion zone)
         // King already counts as 1. Need 9 more.
         let black_squares: [(u8, u8); 9] = [
-            (0, 0), (0, 1), (0, 2), (0, 3), (0, 5),
-            (0, 6), (0, 7), (0, 8), (1, 0),
+            (0, 0),
+            (0, 1),
+            (0, 2),
+            (0, 3),
+            (0, 5),
+            (0, 6),
+            (0, 7),
+            (0, 8),
+            (1, 0),
         ];
         for &(r, c) in &black_squares {
             pos.set_piece(
@@ -1138,8 +1321,15 @@ mod tests {
 
         // Place 10 White pieces in rows 6-8 (White's promotion zone)
         let white_squares: [(u8, u8); 9] = [
-            (8, 0), (8, 1), (8, 2), (8, 3), (8, 5),
-            (8, 6), (8, 7), (8, 8), (7, 0),
+            (8, 0),
+            (8, 1),
+            (8, 2),
+            (8, 3),
+            (8, 5),
+            (8, 6),
+            (8, 7),
+            (8, 8),
+            (7, 0),
         ];
         for &(r, c) in &white_squares {
             pos.set_piece(
@@ -1163,9 +1353,17 @@ mod tests {
 
         // Verify piece counts in zone
         let black_in_zone = count_pieces_in_promotion_zone(&gs.position, Color::Black);
-        assert!(black_in_zone >= 10, "Black needs 10+ pieces in zone, got {}", black_in_zone);
+        assert!(
+            black_in_zone >= 10,
+            "Black needs 10+ pieces in zone, got {}",
+            black_in_zone
+        );
         let white_in_zone = count_pieces_in_promotion_zone(&gs.position, Color::White);
-        assert!(white_in_zone >= 10, "White needs 10+ pieces in zone, got {}", white_in_zone);
+        assert!(
+            white_in_zone >= 10,
+            "White needs 10+ pieces in zone, got {}",
+            white_in_zone
+        );
 
         let result = check_impasse(&gs);
         assert!(result.is_some(), "Impasse should be triggered");
@@ -1197,43 +1395,73 @@ mod tests {
         white_hand_rooks: u8, // rooks in hand for White (5 impasse pts each)
     ) -> Position {
         // 3 rows x 9 cols minus 1 king square = 26 available squares per side
-        assert!(black_pawns <= 26, "Cannot place {} Black pawns (max 26)", black_pawns);
-        assert!(white_pawns <= 26, "Cannot place {} White pawns (max 26)", white_pawns);
+        assert!(
+            black_pawns <= 26,
+            "Cannot place {} Black pawns (max 26)",
+            black_pawns
+        );
+        assert!(
+            white_pawns <= 26,
+            "Cannot place {} White pawns (max 26)",
+            white_pawns
+        );
 
         let mut pos = Position::empty();
         // Kings already in opponent's camp
-        pos.set_piece(Square::from_row_col(0, 4).unwrap(),
-            Piece::new(PieceType::King, Color::Black, false));
-        pos.set_piece(Square::from_row_col(8, 4).unwrap(),
-            Piece::new(PieceType::King, Color::White, false));
+        pos.set_piece(
+            Square::from_row_col(0, 4).unwrap(),
+            Piece::new(PieceType::King, Color::Black, false),
+        );
+        pos.set_piece(
+            Square::from_row_col(8, 4).unwrap(),
+            Piece::new(PieceType::King, Color::White, false),
+        );
 
         // Black pawns scattered across rows 0-2 (avoiding col 4 where king is)
         let mut black_placed = 0u8;
         'outer_b: for r in 0u8..3 {
             for c in 0u8..9 {
-                if r == 0 && c == 4 { continue; } // king's square
-                if black_placed >= black_pawns { break 'outer_b; }
-                pos.set_piece(Square::from_row_col(r, c).unwrap(),
-                    Piece::new(PieceType::Pawn, Color::Black, false));
+                if r == 0 && c == 4 {
+                    continue;
+                } // king's square
+                if black_placed >= black_pawns {
+                    break 'outer_b;
+                }
+                pos.set_piece(
+                    Square::from_row_col(r, c).unwrap(),
+                    Piece::new(PieceType::Pawn, Color::Black, false),
+                );
                 black_placed += 1;
             }
         }
-        assert_eq!(black_placed, black_pawns,
-            "Failed to place all Black pawns: placed {}, wanted {}", black_placed, black_pawns);
+        assert_eq!(
+            black_placed, black_pawns,
+            "Failed to place all Black pawns: placed {}, wanted {}",
+            black_placed, black_pawns
+        );
 
         // White pawns scattered across rows 6-8 (avoiding col 4 where king is)
         let mut white_placed = 0u8;
         'outer_w: for r in 6u8..9 {
             for c in 0u8..9 {
-                if r == 8 && c == 4 { continue; } // king's square
-                if white_placed >= white_pawns { break 'outer_w; }
-                pos.set_piece(Square::from_row_col(r, c).unwrap(),
-                    Piece::new(PieceType::Pawn, Color::White, false));
+                if r == 8 && c == 4 {
+                    continue;
+                } // king's square
+                if white_placed >= white_pawns {
+                    break 'outer_w;
+                }
+                pos.set_piece(
+                    Square::from_row_col(r, c).unwrap(),
+                    Piece::new(PieceType::Pawn, Color::White, false),
+                );
                 white_placed += 1;
             }
         }
-        assert_eq!(white_placed, white_pawns,
-            "Failed to place all White pawns: placed {}, wanted {}", white_placed, white_pawns);
+        assert_eq!(
+            white_placed, white_pawns,
+            "Failed to place all White pawns: placed {}, wanted {}",
+            white_placed, white_pawns
+        );
 
         // Extra rooks in hand to tune the score
         pos.set_hand_count(Color::Black, HandPieceType::Rook, black_hand_rooks);
@@ -1259,24 +1487,41 @@ mod tests {
         // Verify zone counts
         let black_in_zone = count_pieces_in_promotion_zone(&pos, Color::Black);
         let white_in_zone = count_pieces_in_promotion_zone(&pos, Color::White);
-        assert!(black_in_zone >= 10,
-            "Black needs 10+ pieces in zone, got {}", black_in_zone);
-        assert!(white_in_zone >= 10,
-            "White needs 10+ pieces in zone, got {}", white_in_zone);
+        assert!(
+            black_in_zone >= 10,
+            "Black needs 10+ pieces in zone, got {}",
+            black_in_zone
+        );
+        assert!(
+            white_in_zone >= 10,
+            "White needs 10+ pieces in zone, got {}",
+            white_in_zone
+        );
 
         let black_score = compute_impasse_score(&pos, Color::Black);
         let white_score = compute_impasse_score(&pos, Color::White);
-        assert!(black_score >= 24,
-            "Black score should be >= 24, got {}", black_score);
-        assert!(white_score < 24,
-            "White score should be < 24, got {}", white_score);
+        assert!(
+            black_score >= 24,
+            "Black score should be >= 24, got {}",
+            black_score
+        );
+        assert!(
+            white_score < 24,
+            "White score should be < 24, got {}",
+            white_score
+        );
 
         let gs = GameState::from_position(pos, 500);
         let result = check_impasse(&gs);
         assert!(result.is_some(), "Impasse should trigger");
         match result.unwrap() {
-            GameResult::Impasse { winner: Some(Color::Black) } => {}
-            other => panic!("Expected Impasse {{ winner: Some(Black) }}, got {:?}", other),
+            GameResult::Impasse {
+                winner: Some(Color::Black),
+            } => {}
+            other => panic!(
+                "Expected Impasse {{ winner: Some(Black) }}, got {:?}",
+                other
+            ),
         }
     }
 
@@ -1293,24 +1538,41 @@ mod tests {
         // Verify zone counts (symmetric with Black-wins test)
         let black_in_zone = count_pieces_in_promotion_zone(&pos, Color::Black);
         let white_in_zone = count_pieces_in_promotion_zone(&pos, Color::White);
-        assert!(black_in_zone >= 10,
-            "Black needs 10+ pieces in zone, got {}", black_in_zone);
-        assert!(white_in_zone >= 10,
-            "White needs 10+ pieces in zone, got {}", white_in_zone);
+        assert!(
+            black_in_zone >= 10,
+            "Black needs 10+ pieces in zone, got {}",
+            black_in_zone
+        );
+        assert!(
+            white_in_zone >= 10,
+            "White needs 10+ pieces in zone, got {}",
+            white_in_zone
+        );
 
         let black_score = compute_impasse_score(&pos, Color::Black);
         let white_score = compute_impasse_score(&pos, Color::White);
-        assert!(white_score >= 24,
-            "White score should be >= 24, got {}", white_score);
-        assert!(black_score < 24,
-            "Black score should be < 24, got {}", black_score);
+        assert!(
+            white_score >= 24,
+            "White score should be >= 24, got {}",
+            white_score
+        );
+        assert!(
+            black_score < 24,
+            "Black score should be < 24, got {}",
+            black_score
+        );
 
         let gs = GameState::from_position(pos, 500);
         let result = check_impasse(&gs);
         assert!(result.is_some(), "Impasse should trigger");
         match result.unwrap() {
-            GameResult::Impasse { winner: Some(Color::White) } => {}
-            other => panic!("Expected Impasse {{ winner: Some(White) }}, got {:?}", other),
+            GameResult::Impasse {
+                winner: Some(Color::White),
+            } => {}
+            other => panic!(
+                "Expected Impasse {{ winner: Some(White) }}, got {:?}",
+                other
+            ),
         }
     }
 
@@ -1323,12 +1585,23 @@ mod tests {
 
         let black_score = compute_impasse_score(&pos, Color::Black);
         let white_score = compute_impasse_score(&pos, Color::White);
-        assert!(black_score < 24, "Black score should be < 24, got {}", black_score);
-        assert!(white_score < 24, "White score should be < 24, got {}", white_score);
+        assert!(
+            black_score < 24,
+            "Black score should be < 24, got {}",
+            black_score
+        );
+        assert!(
+            white_score < 24,
+            "White score should be < 24, got {}",
+            white_score
+        );
 
         let gs = GameState::from_position(pos, 500);
-        assert_eq!(check_impasse(&gs), None,
-            "Neither side >= 24 should not trigger impasse");
+        assert_eq!(
+            check_impasse(&gs),
+            None,
+            "Neither side >= 24 should not trigger impasse"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1341,6 +1614,7 @@ mod tests {
     /// Position:
     ///   - White king at (0,0)
     ///   - White gold at (1,0) — could capture a pawn dropped at (1,0)... but see below
+    ///
     ///   Wait — the gold is at (1,0) and the pawn would be dropped at (1,0)? No.
     ///   Let me set this up properly.
     ///
@@ -1351,6 +1625,7 @@ mod tests {
     ///     would expose the king to the rook on row 0 → pinned
     ///   - King can't go to (1,0) (occupied by pawn), (0,1) (own piece),
     ///     or (1,1) (must be covered by Black)
+    ///
     ///   → Uchi-fu-zume
     #[test]
     fn test_uchi_fu_zume_pinned_defender() {
@@ -1566,7 +1841,10 @@ mod tests {
         }
 
         let result = check_sennichite(&gs);
-        assert!(result.is_some(), "Should detect perpetual check (White checking Black)");
+        assert!(
+            result.is_some(),
+            "Should detect perpetual check (White checking Black)"
+        );
         match result.unwrap() {
             GameResult::PerpetualCheck { winner } => {
                 // White is the checker; Black (the victim) wins.
@@ -1597,7 +1875,10 @@ mod tests {
             Piece::new(PieceType::King, Color::Black, false),
         );
         let score = compute_impasse_score(&pos, Color::Black);
-        assert_eq!(score, 1, "Promoted pawn (Tokin) should be worth 1 point, not 5");
+        assert_eq!(
+            score, 1,
+            "Promoted pawn (Tokin) should be worth 1 point, not 5"
+        );
     }
 
     #[test]
@@ -1647,7 +1928,10 @@ mod tests {
         pos.set_hand_count(Color::Black, HandPieceType::Silver, 1);
 
         let score = compute_impasse_score(&pos, Color::Black);
-        assert_eq!(score, 13, "Mixed score: Rook(5) + Horse(5) + Tokin(1) + Gold(1) + Silver-hand(1) = 13");
+        assert_eq!(
+            score, 13,
+            "Mixed score: Rook(5) + Horse(5) + Tokin(1) + Gold(1) + Silver-hand(1) = 13"
+        );
     }
 
     /// Test impasse where only one side reaches 24 points.
@@ -1668,7 +1952,9 @@ mod tests {
 
         // 10 Black pieces in rows 0-2 with high value
         for c in 0u8..9 {
-            if c == 4 { continue; } // King is already there
+            if c == 4 {
+                continue;
+            } // King is already there
             pos.set_piece(
                 Square::from_row_col(0, c).unwrap(),
                 Piece::new(PieceType::Gold, Color::Black, false),
@@ -1690,7 +1976,9 @@ mod tests {
 
         // 10 White pieces in rows 6-8 with LOW value (< 24)
         for c in 0u8..9 {
-            if c == 4 { continue; }
+            if c == 4 {
+                continue;
+            }
             pos.set_piece(
                 Square::from_row_col(8, c).unwrap(),
                 Piece::new(PieceType::Pawn, Color::White, false),
@@ -1713,7 +2001,9 @@ mod tests {
         let result = check_impasse(&gs);
         assert!(result.is_some(), "Impasse should trigger");
         match result.unwrap() {
-            GameResult::Impasse { winner: Some(Color::Black) } => {}
+            GameResult::Impasse {
+                winner: Some(Color::Black),
+            } => {}
             other => panic!("Expected Impasse with Black winner, got {:?}", other),
         }
     }
@@ -1736,7 +2026,9 @@ mod tests {
 
         // 10 Black pieces in zone with LOW value
         for c in 0u8..9 {
-            if c == 4 { continue; }
+            if c == 4 {
+                continue;
+            }
             pos.set_piece(
                 Square::from_row_col(0, c).unwrap(),
                 Piece::new(PieceType::Pawn, Color::Black, false),
@@ -1754,7 +2046,9 @@ mod tests {
 
         // 10 White pieces in zone with HIGH value
         for c in 0u8..9 {
-            if c == 4 { continue; }
+            if c == 4 {
+                continue;
+            }
             pos.set_piece(
                 Square::from_row_col(8, c).unwrap(),
                 Piece::new(PieceType::Gold, Color::White, false),
@@ -1779,7 +2073,9 @@ mod tests {
         let result = check_impasse(&gs);
         assert!(result.is_some(), "Impasse should trigger");
         match result.unwrap() {
-            GameResult::Impasse { winner: Some(Color::White) } => {}
+            GameResult::Impasse {
+                winner: Some(Color::White),
+            } => {}
             other => panic!("Expected Impasse with White winner, got {:?}", other),
         }
     }
@@ -1796,8 +2092,14 @@ mod tests {
         // Black knight at (4,4) should attack (2,3) and (2,5)
         let target1 = Square::from_row_col(2, 3).unwrap();
         let target2 = Square::from_row_col(2, 5).unwrap();
-        assert!(piece_attacks_square(&pos, sq, knight, target1), "Knight should attack (2,3)");
-        assert!(piece_attacks_square(&pos, sq, knight, target2), "Knight should attack (2,5)");
+        assert!(
+            piece_attacks_square(&pos, sq, knight, target1),
+            "Knight should attack (2,3)"
+        );
+        assert!(
+            piece_attacks_square(&pos, sq, knight, target2),
+            "Knight should attack (2,5)"
+        );
         // Should NOT attack (3,4)
         let non_target = Square::from_row_col(3, 4).unwrap();
         assert!(!piece_attacks_square(&pos, sq, knight, non_target));
@@ -1829,7 +2131,10 @@ mod tests {
             Square::from_row_col(4, 4).unwrap(),
             Piece::new(PieceType::Pawn, Color::White, false),
         );
-        assert!(!piece_attacks_square(&pos, sq, lance, target), "Lance should be blocked");
+        assert!(
+            !piece_attacks_square(&pos, sq, lance, target),
+            "Lance should be blocked"
+        );
         // But should still attack (4,4) — the blocker itself
         let blocker_sq = Square::from_row_col(4, 4).unwrap();
         assert!(piece_attacks_square(&pos, sq, lance, blocker_sq));
@@ -1842,14 +2147,49 @@ mod tests {
         let silver = Piece::new(PieceType::Silver, Color::Black, false);
         // Black silver attacks: forward(3,4), fwd-left(3,3), fwd-right(3,5),
         // back-left(5,3), back-right(5,5)
-        assert!(piece_attacks_square(&pos, sq, silver, Square::from_row_col(3, 4).unwrap()));
-        assert!(piece_attacks_square(&pos, sq, silver, Square::from_row_col(3, 3).unwrap()));
-        assert!(piece_attacks_square(&pos, sq, silver, Square::from_row_col(3, 5).unwrap()));
-        assert!(piece_attacks_square(&pos, sq, silver, Square::from_row_col(5, 3).unwrap()));
-        assert!(piece_attacks_square(&pos, sq, silver, Square::from_row_col(5, 5).unwrap()));
+        assert!(piece_attacks_square(
+            &pos,
+            sq,
+            silver,
+            Square::from_row_col(3, 4).unwrap()
+        ));
+        assert!(piece_attacks_square(
+            &pos,
+            sq,
+            silver,
+            Square::from_row_col(3, 3).unwrap()
+        ));
+        assert!(piece_attacks_square(
+            &pos,
+            sq,
+            silver,
+            Square::from_row_col(3, 5).unwrap()
+        ));
+        assert!(piece_attacks_square(
+            &pos,
+            sq,
+            silver,
+            Square::from_row_col(5, 3).unwrap()
+        ));
+        assert!(piece_attacks_square(
+            &pos,
+            sq,
+            silver,
+            Square::from_row_col(5, 5).unwrap()
+        ));
         // Should NOT attack directly left/right/backward-center
-        assert!(!piece_attacks_square(&pos, sq, silver, Square::from_row_col(4, 3).unwrap()));
-        assert!(!piece_attacks_square(&pos, sq, silver, Square::from_row_col(5, 4).unwrap()));
+        assert!(!piece_attacks_square(
+            &pos,
+            sq,
+            silver,
+            Square::from_row_col(4, 3).unwrap()
+        ));
+        assert!(!piece_attacks_square(
+            &pos,
+            sq,
+            silver,
+            Square::from_row_col(5, 4).unwrap()
+        ));
     }
 
     #[test]
@@ -1859,13 +2199,43 @@ mod tests {
         let gold = Piece::new(PieceType::Gold, Color::Black, false);
         // Black gold attacks: forward(3,4), fwd-left(3,3), fwd-right(3,5),
         // left(4,3), right(4,5), backward(5,4)
-        assert!(piece_attacks_square(&pos, sq, gold, Square::from_row_col(3, 4).unwrap()));
-        assert!(piece_attacks_square(&pos, sq, gold, Square::from_row_col(3, 3).unwrap()));
-        assert!(piece_attacks_square(&pos, sq, gold, Square::from_row_col(4, 3).unwrap()));
-        assert!(piece_attacks_square(&pos, sq, gold, Square::from_row_col(5, 4).unwrap()));
+        assert!(piece_attacks_square(
+            &pos,
+            sq,
+            gold,
+            Square::from_row_col(3, 4).unwrap()
+        ));
+        assert!(piece_attacks_square(
+            &pos,
+            sq,
+            gold,
+            Square::from_row_col(3, 3).unwrap()
+        ));
+        assert!(piece_attacks_square(
+            &pos,
+            sq,
+            gold,
+            Square::from_row_col(4, 3).unwrap()
+        ));
+        assert!(piece_attacks_square(
+            &pos,
+            sq,
+            gold,
+            Square::from_row_col(5, 4).unwrap()
+        ));
         // Should NOT attack diagonally backward
-        assert!(!piece_attacks_square(&pos, sq, gold, Square::from_row_col(5, 3).unwrap()));
-        assert!(!piece_attacks_square(&pos, sq, gold, Square::from_row_col(5, 5).unwrap()));
+        assert!(!piece_attacks_square(
+            &pos,
+            sq,
+            gold,
+            Square::from_row_col(5, 3).unwrap()
+        ));
+        assert!(!piece_attacks_square(
+            &pos,
+            sq,
+            gold,
+            Square::from_row_col(5, 5).unwrap()
+        ));
     }
 
     #[test]
@@ -1874,10 +2244,25 @@ mod tests {
         let sq = Square::from_row_col(4, 4).unwrap();
         let bishop = Piece::new(PieceType::Bishop, Color::Black, false);
         // Bishop slides diagonally
-        assert!(piece_attacks_square(&pos, sq, bishop, Square::from_row_col(2, 2).unwrap()));
-        assert!(piece_attacks_square(&pos, sq, bishop, Square::from_row_col(6, 6).unwrap()));
+        assert!(piece_attacks_square(
+            &pos,
+            sq,
+            bishop,
+            Square::from_row_col(2, 2).unwrap()
+        ));
+        assert!(piece_attacks_square(
+            &pos,
+            sq,
+            bishop,
+            Square::from_row_col(6, 6).unwrap()
+        ));
         // Should NOT attack orthogonally
-        assert!(!piece_attacks_square(&pos, sq, bishop, Square::from_row_col(4, 6).unwrap()));
+        assert!(!piece_attacks_square(
+            &pos,
+            sq,
+            bishop,
+            Square::from_row_col(4, 6).unwrap()
+        ));
     }
 
     #[test]
@@ -1887,13 +2272,38 @@ mod tests {
         let sq = Square::from_row_col(4, 4).unwrap();
         let dragon = Piece::new(PieceType::Rook, Color::Black, true);
         // Rook slides
-        assert!(piece_attacks_square(&pos, sq, dragon, Square::from_row_col(4, 8).unwrap()));
-        assert!(piece_attacks_square(&pos, sq, dragon, Square::from_row_col(0, 4).unwrap()));
+        assert!(piece_attacks_square(
+            &pos,
+            sq,
+            dragon,
+            Square::from_row_col(4, 8).unwrap()
+        ));
+        assert!(piece_attacks_square(
+            &pos,
+            sq,
+            dragon,
+            Square::from_row_col(0, 4).unwrap()
+        ));
         // Diagonal steps (king-like)
-        assert!(piece_attacks_square(&pos, sq, dragon, Square::from_row_col(3, 3).unwrap()));
-        assert!(piece_attacks_square(&pos, sq, dragon, Square::from_row_col(5, 5).unwrap()));
+        assert!(piece_attacks_square(
+            &pos,
+            sq,
+            dragon,
+            Square::from_row_col(3, 3).unwrap()
+        ));
+        assert!(piece_attacks_square(
+            &pos,
+            sq,
+            dragon,
+            Square::from_row_col(5, 5).unwrap()
+        ));
         // NOT diagonal slide (2 squares diagonal)
-        assert!(!piece_attacks_square(&pos, sq, dragon, Square::from_row_col(2, 2).unwrap()));
+        assert!(!piece_attacks_square(
+            &pos,
+            sq,
+            dragon,
+            Square::from_row_col(2, 2).unwrap()
+        ));
     }
 
     #[test]
@@ -1903,12 +2313,32 @@ mod tests {
         let sq = Square::from_row_col(4, 4).unwrap();
         let horse = Piece::new(PieceType::Bishop, Color::Black, true);
         // Bishop slides
-        assert!(piece_attacks_square(&pos, sq, horse, Square::from_row_col(2, 2).unwrap()));
+        assert!(piece_attacks_square(
+            &pos,
+            sq,
+            horse,
+            Square::from_row_col(2, 2).unwrap()
+        ));
         // Orthogonal steps (king-like)
-        assert!(piece_attacks_square(&pos, sq, horse, Square::from_row_col(3, 4).unwrap()));
-        assert!(piece_attacks_square(&pos, sq, horse, Square::from_row_col(4, 5).unwrap()));
+        assert!(piece_attacks_square(
+            &pos,
+            sq,
+            horse,
+            Square::from_row_col(3, 4).unwrap()
+        ));
+        assert!(piece_attacks_square(
+            &pos,
+            sq,
+            horse,
+            Square::from_row_col(4, 5).unwrap()
+        ));
         // NOT orthogonal slide (2 squares)
-        assert!(!piece_attacks_square(&pos, sq, horse, Square::from_row_col(2, 4).unwrap()));
+        assert!(!piece_attacks_square(
+            &pos,
+            sq,
+            horse,
+            Square::from_row_col(2, 4).unwrap()
+        ));
     }
 
     // -----------------------------------------------------------------------
@@ -1921,19 +2351,27 @@ mod tests {
     fn test_check_impasse_only_one_king_entered_returns_none() {
         let mut pos = Position::empty();
         // Black king entered White's camp (row 0)
-        pos.set_piece(Square::from_row_col(0, 4).unwrap(),
-            Piece::new(PieceType::King, Color::Black, false));
+        pos.set_piece(
+            Square::from_row_col(0, 4).unwrap(),
+            Piece::new(PieceType::King, Color::Black, false),
+        );
         // White king has NOT entered — still in own territory (row 0 = White's home)
-        pos.set_piece(Square::from_row_col(0, 0).unwrap(),
-            Piece::new(PieceType::King, Color::White, false));
+        pos.set_piece(
+            Square::from_row_col(0, 0).unwrap(),
+            Piece::new(PieceType::King, Color::White, false),
+        );
 
         // Give Black 9 pawns in zone + 3 hand rooks = 24 pts (would qualify)
         for c in [0u8, 1, 2, 3, 5, 6, 7, 8] {
-            pos.set_piece(Square::from_row_col(1, c).unwrap(),
-                Piece::new(PieceType::Pawn, Color::Black, false));
+            pos.set_piece(
+                Square::from_row_col(1, c).unwrap(),
+                Piece::new(PieceType::Pawn, Color::Black, false),
+            );
         }
-        pos.set_piece(Square::from_row_col(2, 0).unwrap(),
-            Piece::new(PieceType::Pawn, Color::Black, false));
+        pos.set_piece(
+            Square::from_row_col(2, 0).unwrap(),
+            Piece::new(PieceType::Pawn, Color::Black, false),
+        );
         pos.set_hand_count(Color::Black, HandPieceType::Rook, 3);
 
         // White has no pieces in Black's camp at all
@@ -1941,7 +2379,10 @@ mod tests {
         pos.hash = pos.compute_hash();
 
         let gs = GameState::from_position(pos, 500);
-        assert_eq!(check_impasse(&gs), None,
-            "Impasse must not trigger when only one king has entered opponent's camp");
+        assert_eq!(
+            check_impasse(&gs),
+            None,
+            "Impasse must not trigger when only one king has entered opponent's camp"
+        );
     }
 }

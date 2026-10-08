@@ -20,10 +20,10 @@ from keisei.config import (
 )
 from keisei.db import init_db, write_training_state
 from keisei.sl.trainer import SLConfig, SLTrainer
-from keisei.training.models.katago_base import KataGoBaseModel
 from keisei.training.checkpoint import save_checkpoint
 from keisei.training.katago_loop import KataGoTrainingLoop
 from keisei.training.model_registry import build_model, validate_model_params
+from keisei.training.models.katago_base import KataGoBaseModel
 
 logger = logging.getLogger(__name__)
 

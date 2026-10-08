@@ -67,10 +67,26 @@ pub fn piece_attack_dirs(
 ) -> (Vec<i8>, Vec<i8>) {
     let forward = if color == Color::Black { UP } else { DOWN };
     let backward = if color == Color::Black { DOWN } else { UP };
-    let fwd_left = if color == Color::Black { UP_LEFT } else { DOWN_RIGHT };
-    let fwd_right = if color == Color::Black { UP_RIGHT } else { DOWN_LEFT };
-    let bwd_left = if color == Color::Black { DOWN_LEFT } else { UP_RIGHT };
-    let bwd_right = if color == Color::Black { DOWN_RIGHT } else { UP_LEFT };
+    let fwd_left = if color == Color::Black {
+        UP_LEFT
+    } else {
+        DOWN_RIGHT
+    };
+    let fwd_right = if color == Color::Black {
+        UP_RIGHT
+    } else {
+        DOWN_LEFT
+    };
+    let bwd_left = if color == Color::Black {
+        DOWN_LEFT
+    } else {
+        UP_RIGHT
+    };
+    let bwd_right = if color == Color::Black {
+        DOWN_RIGHT
+    } else {
+        UP_LEFT
+    };
 
     // Gold movement: fwd, fwd_left, fwd_right, left, right, backward
     let gold_steps = vec![forward, fwd_left, fwd_right, LEFT, RIGHT, backward];
@@ -92,9 +108,7 @@ pub fn piece_attack_dirs(
                 vec![UP, DOWN, LEFT, RIGHT],
             ),
             // Gold and King cannot be promoted
-            PieceType::Gold | PieceType::King => unreachable!(
-                "Gold and King cannot be promoted"
-            ),
+            PieceType::Gold | PieceType::King => unreachable!("Gold and King cannot be promoted"),
         };
     }
 
@@ -110,7 +124,9 @@ pub fn piece_attack_dirs(
         PieceType::Bishop => (vec![], vec![UP_LEFT, UP_RIGHT, DOWN_LEFT, DOWN_RIGHT]),
         PieceType::Rook => (vec![], vec![UP, DOWN, LEFT, RIGHT]),
         PieceType::King => (
-            vec![UP, DOWN, LEFT, RIGHT, UP_LEFT, UP_RIGHT, DOWN_LEFT, DOWN_RIGHT],
+            vec![
+                UP, DOWN, LEFT, RIGHT, UP_LEFT, UP_RIGHT, DOWN_LEFT, DOWN_RIGHT,
+            ],
             vec![],
         ),
     }
@@ -192,10 +208,11 @@ pub fn compute_attack_map(pos: &Position) -> AttackMap {
         // Step attacks
         for delta in steps {
             if !would_wrap_file(sq, delta)
-                && let Some(target) = sq.offset(delta) {
-                    attack_map[color_idx][target.index()] =
-                        attack_map[color_idx][target.index()].saturating_add(1);
-                }
+                && let Some(target) = sq.offset(delta)
+            {
+                attack_map[color_idx][target.index()] =
+                    attack_map[color_idx][target.index()].saturating_add(1);
+            }
         }
 
         // Slide attacks (ray-cast)
@@ -251,9 +268,10 @@ pub fn remove_piece_attacks(map: &mut AttackMap, pos: &Position, sq: Square, pie
     // Step attacks
     for delta in steps {
         if !would_wrap_file(sq, delta)
-            && let Some(target) = sq.offset(delta) {
-                map[color_idx][target.index()] = map[color_idx][target.index()].saturating_sub(1);
-            }
+            && let Some(target) = sq.offset(delta)
+        {
+            map[color_idx][target.index()] = map[color_idx][target.index()].saturating_sub(1);
+        }
     }
 
     // Slide attacks (ray-cast, stopping at the first blocker — same logic as compute_attack_map)
@@ -300,9 +318,10 @@ pub fn add_piece_attacks(map: &mut AttackMap, pos: &Position, sq: Square, piece:
     // Step attacks
     for delta in steps {
         if !would_wrap_file(sq, delta)
-            && let Some(target) = sq.offset(delta) {
-                map[color_idx][target.index()] = map[color_idx][target.index()].saturating_add(1);
-            }
+            && let Some(target) = sq.offset(delta)
+        {
+            map[color_idx][target.index()] = map[color_idx][target.index()].saturating_add(1);
+        }
     }
 
     // Slide attacks (ray-cast, stopping at the first blocker)
@@ -484,7 +503,9 @@ mod tests {
         let map = compute_attack_map(&pos);
 
         let center = Square::from_row_col(4, 4).unwrap();
-        let directions = [UP, DOWN, LEFT, RIGHT, UP_LEFT, UP_RIGHT, DOWN_LEFT, DOWN_RIGHT];
+        let directions = [
+            UP, DOWN, LEFT, RIGHT, UP_LEFT, UP_RIGHT, DOWN_LEFT, DOWN_RIGHT,
+        ];
 
         let mut attacked_count = 0usize;
         for delta in directions {
@@ -497,7 +518,10 @@ mod tests {
                 attacked_count += 1;
             }
         }
-        assert_eq!(attacked_count, 8, "King at center should attack exactly 8 squares");
+        assert_eq!(
+            attacked_count, 8,
+            "King at center should attack exactly 8 squares"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -601,14 +625,13 @@ mod tests {
         );
 
         // All other squares should be 0
-        for i in 0..Square::NUM_SQUARES {
+        for (i, &attacks) in map[Color::Black as usize].iter().enumerate() {
             let sq = Square::new_unchecked(i as u8);
             if sq == t1 || sq == t2 {
                 continue;
             }
             assert_eq!(
-                map[Color::Black as usize][i],
-                0,
+                attacks, 0,
                 "Black knight at (4,4) should NOT attack square {}",
                 i
             );
@@ -627,7 +650,9 @@ mod tests {
         // Orthogonal steps: one square in each cardinal direction
         let center = Square::from_row_col(4, 4).unwrap();
         for delta in [UP, DOWN, LEFT, RIGHT] {
-            let target = center.offset(delta).expect("center +orthogonal must be in bounds");
+            let target = center
+                .offset(delta)
+                .expect("center +orthogonal must be in bounds");
             assert!(
                 map[Color::Black as usize][target.index()] >= 1,
                 "Horse at (4,4) should have orthogonal step attack at delta {}",
@@ -710,7 +735,9 @@ mod tests {
 
         // Pick the Black pawn at (6, 4).
         let pawn_sq = Square::from_row_col(6, 4).unwrap();
-        let pawn = pos.piece_at(pawn_sq).expect("pawn must be at (6,4) in startpos");
+        let pawn = pos
+            .piece_at(pawn_sq)
+            .expect("pawn must be at (6,4) in startpos");
         assert_eq!(pawn.piece_type(), PieceType::Pawn);
         assert_eq!(pawn.color(), Color::Black);
 
@@ -804,7 +831,10 @@ mod tests {
         let sq = Square::from_row_col(4, 0).unwrap();
         assert!(would_wrap_file(sq, LEFT), "col 0 + LEFT should wrap");
         assert!(would_wrap_file(sq, UP_LEFT), "col 0 + UP_LEFT should wrap");
-        assert!(would_wrap_file(sq, DOWN_LEFT), "col 0 + DOWN_LEFT should wrap");
+        assert!(
+            would_wrap_file(sq, DOWN_LEFT),
+            "col 0 + DOWN_LEFT should wrap"
+        );
     }
 
     #[test]
@@ -812,16 +842,28 @@ mod tests {
         // Square at col 8 + RIGHT (+1) should wrap
         let sq = Square::from_row_col(4, 8).unwrap();
         assert!(would_wrap_file(sq, RIGHT), "col 8 + RIGHT should wrap");
-        assert!(would_wrap_file(sq, UP_RIGHT), "col 8 + UP_RIGHT should wrap");
-        assert!(would_wrap_file(sq, DOWN_RIGHT), "col 8 + DOWN_RIGHT should wrap");
+        assert!(
+            would_wrap_file(sq, UP_RIGHT),
+            "col 8 + UP_RIGHT should wrap"
+        );
+        assert!(
+            would_wrap_file(sq, DOWN_RIGHT),
+            "col 8 + DOWN_RIGHT should wrap"
+        );
     }
 
     #[test]
     fn test_would_wrap_file_center_no_wrap() {
         let sq = Square::from_row_col(4, 4).unwrap();
         // All 8 directions from center should NOT wrap
-        for delta in [UP, DOWN, LEFT, RIGHT, UP_LEFT, UP_RIGHT, DOWN_LEFT, DOWN_RIGHT] {
-            assert!(!would_wrap_file(sq, delta), "center + delta {} should not wrap", delta);
+        for delta in [
+            UP, DOWN, LEFT, RIGHT, UP_LEFT, UP_RIGHT, DOWN_LEFT, DOWN_RIGHT,
+        ] {
+            assert!(
+                !would_wrap_file(sq, delta),
+                "center + delta {} should not wrap",
+                delta
+            );
         }
     }
 
@@ -829,13 +871,25 @@ mod tests {
     fn test_would_wrap_file_out_of_bounds() {
         // Top-left corner + UP should be out of bounds (row -1)
         let sq = Square::from_row_col(0, 0).unwrap();
-        assert!(would_wrap_file(sq, UP), "row 0 + UP should be out of bounds");
-        assert!(would_wrap_file(sq, UP_LEFT), "row 0 col 0 + UP_LEFT should be out of bounds");
+        assert!(
+            would_wrap_file(sq, UP),
+            "row 0 + UP should be out of bounds"
+        );
+        assert!(
+            would_wrap_file(sq, UP_LEFT),
+            "row 0 col 0 + UP_LEFT should be out of bounds"
+        );
 
         // Bottom-right corner + DOWN should be out of bounds
         let sq = Square::from_row_col(8, 8).unwrap();
-        assert!(would_wrap_file(sq, DOWN), "row 8 + DOWN should be out of bounds");
-        assert!(would_wrap_file(sq, DOWN_RIGHT), "row 8 col 8 + DOWN_RIGHT should be out of bounds");
+        assert!(
+            would_wrap_file(sq, DOWN),
+            "row 8 + DOWN should be out of bounds"
+        );
+        assert!(
+            would_wrap_file(sq, DOWN_RIGHT),
+            "row 8 col 8 + DOWN_RIGHT should be out of bounds"
+        );
     }
 
     #[test]
@@ -843,12 +897,21 @@ mod tests {
         // UP/DOWN from center column should never wrap (no column change)
         let sq = Square::from_row_col(4, 4).unwrap();
         assert!(!would_wrap_file(sq, UP), "UP from (4,4) should not wrap");
-        assert!(!would_wrap_file(sq, DOWN), "DOWN from (4,4) should not wrap");
+        assert!(
+            !would_wrap_file(sq, DOWN),
+            "DOWN from (4,4) should not wrap"
+        );
 
         // Even from column edges, UP/DOWN should not wrap
         let sq_left = Square::from_row_col(4, 0).unwrap();
-        assert!(!would_wrap_file(sq_left, UP), "UP from col 0 should not wrap");
-        assert!(!would_wrap_file(sq_left, DOWN), "DOWN from col 0 should not wrap");
+        assert!(
+            !would_wrap_file(sq_left, UP),
+            "UP from col 0 should not wrap"
+        );
+        assert!(
+            !would_wrap_file(sq_left, DOWN),
+            "DOWN from col 0 should not wrap"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -873,11 +936,13 @@ mod tests {
         let sq_11 = Square::from_row_col(1, 1).unwrap();
         let sq_00 = Square::from_row_col(0, 0).unwrap();
         assert_eq!(
-            map[Color::Black as usize][sq_11.index()], 0,
+            map[Color::Black as usize][sq_11.index()],
+            0,
             "Bishop blocked — should not reach (1,1)"
         );
         assert_eq!(
-            map[Color::Black as usize][sq_00.index()], 0,
+            map[Color::Black as usize][sq_00.index()],
+            0,
             "Bishop blocked — should not reach (0,0)"
         );
 
@@ -946,11 +1011,13 @@ mod tests {
 
         // Bishop should no longer reach (1,1) or (0,0)
         assert_eq!(
-            map[Color::Black as usize][sq_11.index()], 0,
+            map[Color::Black as usize][sq_11.index()],
+            0,
             "Bishop blocked at (2,2) — should not reach (1,1)"
         );
         assert_eq!(
-            map[Color::Black as usize][sq_00.index()], 0,
+            map[Color::Black as usize][sq_00.index()],
+            0,
             "Bishop blocked at (2,2) — should not reach (0,0)"
         );
     }

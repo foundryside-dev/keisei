@@ -3,17 +3,16 @@
 import sqlite3
 import threading
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 import torch
 
 from keisei.db import init_db
 from keisei.training.opponent_store import (
+    EntryStatus,
     OpponentEntry,
     OpponentStore,
     Role,
-    EntryStatus,
     compute_elo_update,
 )
 

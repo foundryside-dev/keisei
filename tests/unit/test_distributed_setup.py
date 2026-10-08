@@ -7,15 +7,14 @@ error branches are undertested.
 
 from __future__ import annotations
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
-import torch
 
 from keisei.training.distributed import (
     DistributedContext,
-    setup_distributed,
     cleanup_distributed,
+    setup_distributed,
 )
 
 

@@ -27,7 +27,7 @@ from typing import Any
 
 import torch
 
-from keisei.config import ConcurrencyConfig, load_config
+from keisei.config import ConcurrencyConfig, DynamicConfig, RoleEloConfig, load_config
 from keisei.db.tournament_queue import (
     ClaimedPairing,
     claim_next_pairings_batch,
@@ -40,12 +40,17 @@ from keisei.training.concurrent_matches import (
     MatchResult,
     RoundStats,
 )
+from keisei.training.dynamic_trainer import DynamicTrainer
+from keisei.training.match_scheduler import is_training_match
 from keisei.training.match_utils import release_models
 from keisei.training.opponent_store import (
+    EntryStatus,
     OpponentEntry,
     OpponentStore,
+    Role,
     compute_elo_update,
 )
+from keisei.training.role_elo import RoleEloTracker
 from keisei.training.tournament import majority_wins_result
 
 logger = logging.getLogger(__name__)
@@ -80,6 +85,9 @@ class TournamentWorker:
         stop_event: threading.Event | None = None,
         pool: ConcurrentMatchPool | None = None,
         vecenv_factory: Callable[[], Any] | None = None,
+        dynamic_config: DynamicConfig | None = None,
+        learner_lr: float = 2e-4,
+        role_elo_config: RoleEloConfig | None = None,
     ) -> None:
         self.db_path = db_path
         self.worker_id = worker_id
@@ -96,6 +104,11 @@ class TournamentWorker:
         self._pool = pool if pool is not None else ConcurrentMatchPool(concurrency)
 
         self.store = OpponentStore(db_path=db_path, league_dir=league_dir)
+        self.role_elo_tracker = RoleEloTracker(self.store, role_elo_config or RoleEloConfig())
+        self.dynamic_trainer = (
+            DynamicTrainer(self.store, dynamic_config, learner_lr)
+            if dynamic_config is not None and dynamic_config.training_enabled else None
+        )
 
     def _maybe_heartbeat(self) -> None:
         now = time.monotonic()
@@ -129,7 +142,7 @@ class TournamentWorker:
             from shogi_gym import VecEnv
 
             def _default_factory() -> Any:
-                return VecEnv(
+                return VecEnv(  # type: ignore[call-arg]  # PyO3 kwargs are absent from the native stub.
                     num_envs=self.concurrency.total_envs,
                     max_ply=self.max_ply,
                     observation_mode="katago", action_mode="spatial",
@@ -218,6 +231,7 @@ class TournamentWorker:
                 max_ply=self.max_ply,
                 stop_event=self._stop_event,
                 epoch=current_epoch,
+                trainable_fn=self._is_trainable_match if self.dynamic_trainer is not None else None,
             )
         except Exception:
             logger.exception(
@@ -289,6 +303,9 @@ class TournamentWorker:
             # Independent of match-result write: feature failure must not
             # un-mark the pairing or rewind Elo.
             self._write_game_features(result)
+            # Match records retain the pre-update counts. Learning errors cannot
+            # undo a completed pairing or its result; the trainer handles them.
+            self._train_dynamic_entries(result)
 
         for i in unmatched_indices:
             claim = claims_in_order[i]
@@ -306,6 +323,33 @@ class TournamentWorker:
                 stats.total_games, stats.round_duration_s,
             )
 
+    @staticmethod
+    def _is_trainable_match(a: OpponentEntry, b: OpponentEntry) -> bool:
+        return is_training_match(a, b) and any(
+            entry.role == Role.DYNAMIC and entry.training_enabled
+            and entry.status == EntryStatus.ACTIVE for entry in (a, b)
+        )
+
+    def _train_dynamic_entries(self, result: MatchResult) -> None:
+        trainer = self.dynamic_trainer
+        if trainer is None or result.rollout is None:
+            return
+        current_a = self.store.get_entry(result.entry_a.id)
+        current_b = self.store.get_entry(result.entry_b.id)
+        if current_a is None or current_b is None or not is_training_match(current_a, current_b):
+            return
+        for side, entry in enumerate((current_a, current_b)):
+            if (entry.role != Role.DYNAMIC or not entry.training_enabled
+                    or entry.status != EntryStatus.ACTIVE):
+                continue
+            trainer.record_match(entry.id, result.rollout, side)
+            if (trainer.should_update(entry.id) and not trainer.is_rate_limited()
+                    and not trainer.is_gpu_backpressured(str(self.device))):
+                try:
+                    trainer.update(entry, str(self.device))
+                except Exception:
+                    logger.exception("Dynamic sidecar update failed for entry %d", entry.id)
+
     def _write_game_features(self, result: MatchResult) -> None:
         """Persist completed per-game feature rows for one match."""
         tracker = result.feature_tracker
@@ -321,45 +365,49 @@ class TournamentWorker:
     def _write_match_result(self, result: MatchResult, epoch: int) -> None:
         entry_a_id = result.entry_a.id
         entry_b_id = result.entry_b.id
-        # Re-read entries from the DB instead of using the snapshots from
-        # claim-time: a single batch may contain multiple pairings sharing an
-        # entry (e.g. (A,B) then (A,C)), and the first result's update_elo()
-        # only touches the DB, not the snapshot.  Computing from the snapshot
-        # would read A's pre-batch rating for the second result and overwrite
-        # the first update.
-        current_a = self.store.get_entry(entry_a_id)
-        current_b = self.store.get_entry(entry_b_id)
-        if current_a is None or current_b is None:
-            raise RuntimeError(
-                f"Entry disappeared between claim and record "
-                f"(a={entry_a_id}, b={entry_b_id})",
+        # Reserve the SQLite writer before reading ratings. Other sidecars
+        # must see this result's committed ratings before computing theirs.
+        with self.store.transaction(immediate=True):
+            current_a = self.store.get_entry(entry_a_id)
+            current_b = self.store.get_entry(entry_b_id)
+            if current_a is None or current_b is None:
+                raise RuntimeError(
+                    f"Entry disappeared between claim and record "
+                    f"(a={entry_a_id}, b={entry_b_id})",
+                )
+            result_score = majority_wins_result(
+                result.a_wins, result.b_wins, result.draws,
             )
-        result_score = majority_wins_result(
-            result.a_wins, result.b_wins, result.draws,
-        )
-        new_a_elo, new_b_elo = compute_elo_update(
-            current_a.elo_rating, current_b.elo_rating,
-            result=result_score, k=self.k_factor,
-        )
-        self.store.record_result(
-            epoch=epoch,
-            entry_a_id=entry_a_id,
-            entry_b_id=entry_b_id,
-            wins_a=result.a_wins,
-            wins_b=result.b_wins,
-            draws=result.draws,
-            match_type="calibration",
-            role_a=current_a.role,
-            role_b=current_b.role,
-            elo_before_a=current_a.elo_rating,
-            elo_after_a=new_a_elo,
-            elo_before_b=current_b.elo_rating,
-            elo_after_b=new_b_elo,
-            training_updates_a=current_a.update_count,
-            training_updates_b=current_b.update_count,
-        )
-        self.store.update_elo(entry_a_id, new_a_elo, epoch=epoch)
-        self.store.update_elo(entry_b_id, new_b_elo, epoch=epoch)
+            new_a_elo, new_b_elo = compute_elo_update(
+                current_a.elo_rating, current_b.elo_rating,
+                result=result_score, k=self.k_factor,
+            )
+            context = RoleEloTracker.determine_match_context(current_a, current_b)
+            column_a, column_b = self.role_elo_tracker.columns_for_context(current_a, current_b, context)
+            column_b = column_b or column_a
+            self.role_elo_tracker.update_from_result(current_a, current_b, result_score, context)
+            updated_a = self.store.get_entry(entry_a_id)
+            updated_b = self.store.get_entry(entry_b_id)
+            assert updated_a is not None and updated_b is not None
+            self.store.record_result(
+                epoch=epoch,
+                entry_a_id=entry_a_id,
+                entry_b_id=entry_b_id,
+                wins_a=result.a_wins,
+                wins_b=result.b_wins,
+                draws=result.draws,
+                match_type="train" if is_training_match(current_a, current_b) else "calibration",
+                role_a=current_a.role,
+                role_b=current_b.role,
+                elo_before_a=getattr(current_a, column_a.value),
+                elo_after_a=getattr(updated_a, column_a.value),
+                elo_before_b=getattr(current_b, column_b.value),
+                elo_after_b=getattr(updated_b, column_b.value),
+                training_updates_a=current_a.update_count,
+                training_updates_b=current_b.update_count,
+            )
+            self.store.update_elo(entry_a_id, new_a_elo, epoch=epoch)
+            self.store.update_elo(entry_b_id, new_b_elo, epoch=epoch)
         logger.info(
             "  %s vs %s — %dW %dL %dD (Elo: %.0f→%.0f / %.0f→%.0f)",
             current_a.display_name, current_b.display_name,
@@ -412,6 +460,9 @@ def main(argv: list[str] | None = None) -> int:
         max_staleness_epochs=cfg.league.max_staleness_epochs,
         k_factor=cfg.league.tournament_k_factor,
         stop_event=stop_event,
+        dynamic_config=cfg.league.dynamic,
+        learner_lr=float(cfg.training.algorithm_params.get("learning_rate", 2e-4)),
+        role_elo_config=cfg.league.elo,
     )
     worker.run()
     return 0

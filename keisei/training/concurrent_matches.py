@@ -16,11 +16,11 @@ from typing import TYPE_CHECKING, Any, Callable
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 
 from keisei.config import ConcurrencyConfig
 from keisei.training.game_feature_tracker import GameFeatureTracker
 from keisei.training.opponent_store import OpponentEntry
+from keisei.training.policy import masked_categorical
 
 if TYPE_CHECKING:
     from keisei.training.dynamic_trainer import MatchRollout
@@ -84,6 +84,8 @@ class _MatchSlot:
     _actions: list[torch.Tensor] = field(default_factory=list)
     _rewards: list[torch.Tensor] = field(default_factory=list)
     _dones: list[torch.Tensor] = field(default_factory=list)
+    _terminated: list[torch.Tensor] = field(default_factory=list)
+    _log_probs: list[torch.Tensor] = field(default_factory=list)
     _masks: list[torch.Tensor] = field(default_factory=list)
     _perspective: list[torch.Tensor] = field(default_factory=list)
     feature_tracker: GameFeatureTracker | None = None
@@ -119,6 +121,8 @@ class _MatchSlot:
         self._actions = []
         self._rewards = []
         self._dones = []
+        self._terminated = []
+        self._log_probs = []
         self._masks = []
         self._perspective = []
         num_envs = self.env_end - self.env_start
@@ -149,6 +153,12 @@ class _MatchSlot:
                 dones=torch.stack(self._dones),
                 legal_masks=torch.stack(self._masks),
                 perspective=torch.stack(self._perspective),
+                terminated=torch.stack(self._terminated),
+                log_probs=torch.stack(self._log_probs),
+                checkpoint_versions=(
+                    getattr(self.model_a, "_keisei_checkpoint_version", None),
+                    getattr(self.model_b, "_keisei_checkpoint_version", None),
+                ),
             )
         assert self.entry_a is not None
         assert self.entry_b is not None
@@ -288,6 +298,7 @@ class ConcurrentMatchPool:
                 # Save pre-step player state per slot — needed for correct reward
                 # attribution (VecEnv rewards are from last-mover perspective).
                 actions = torch.zeros(self.config.total_envs, dtype=torch.long, device=device)
+                behavior_log_probs = torch.zeros(self.config.total_envs, device=device)
                 pre_step_players: dict[int, np.ndarray] = {}
 
                 # --- Phase 1: Collect per-slot data and build model batches ---
@@ -320,8 +331,8 @@ class ConcurrentMatchPool:
                     # the single-pass-per-ply invariant that rollout buffers
                     # depend on.
                     if slot.collect_rollout:
-                        slot._obs.append(partition_obs.cpu())
-                        slot._masks.append(partition_legal.cpu())
+                        slot._obs.append(partition_obs.cpu().clone())
+                        slot._masks.append(partition_legal.cpu().clone())
                         slot._perspective.append(
                             torch.from_numpy(partition_players.copy())
                         )
@@ -356,11 +367,9 @@ class ConcurrentMatchPool:
                     with torch.no_grad():
                         out = model(obs[all_indices])
                         logits = out.policy_logits.reshape(all_indices.numel(), -1)
-                        masked = logits.masked_fill(
-                            ~legal_masks[all_indices], float("-inf")
-                        )
-                        probs = F.softmax(masked, dim=-1)
-                        sampled = torch.distributions.Categorical(probs).sample()
+                        dist = masked_categorical(logits, legal_masks[all_indices])
+                        sampled = dist.sample()
+                        behavior_log_probs[all_indices] = dist.log_prob(sampled)
                     actions[all_indices] = sampled
 
                 # --- Phase 3: Per-slot rollout action collection ---
@@ -369,7 +378,8 @@ class ConcurrentMatchPool:
                         continue  # skipped by zero-legal guard
                     if slot.collect_rollout:
                         s, e = slot.env_start, slot.env_end
-                        slot._actions.append(actions[s:e].cpu())
+                        slot._actions.append(actions[s:e].cpu().clone())
+                        slot._log_probs.append(behavior_log_probs[s:e].cpu().clone())
 
                 # For inactive env ranges, pick first legal action.
                 # Iterates ALL parallel_matches partitions (not just effective_parallel)
@@ -430,6 +440,7 @@ class ConcurrentMatchPool:
                         slot._dones.append(
                             torch.from_numpy(partition_done.astype(np.float32))
                         )
+                        slot._terminated.append(torch.from_numpy(partition_term.copy()))
 
                     # Count completed games.  Rewards are from the LAST-MOVER's
                     # perspective: +1 = last mover won, -1 = last mover lost.

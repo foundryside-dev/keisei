@@ -1,13 +1,30 @@
 """Tests for showcase database tables and operations."""
 from __future__ import annotations
 
+import concurrent.futures
 import sqlite3
+import threading
 from pathlib import Path
-from typing import Any
 
 import pytest
 
-from keisei.db import SCHEMA_VERSION, init_db, _connect
+from keisei.db import SCHEMA_VERSION, _connect, init_db
+from keisei.db.showcase import (
+    cancel_match,
+    claim_next_match,
+    cleanup_orphaned_games,
+    create_showcase_game,
+    mark_game_abandoned,
+    mark_game_completed,
+    queue_match,
+    read_active_showcase_game,
+    read_heartbeat,
+    read_queue,
+    read_showcase_moves_since,
+    update_queue_speed,
+    write_heartbeat,
+    write_showcase_move,
+)
 
 
 @pytest.fixture
@@ -29,21 +46,29 @@ class TestShowcaseSchema:
     def test_showcase_queue_table_exists(self, db: str) -> None:
         conn = _connect(db)
         try:
-            conn.execute("SELECT id, entry_id_1, entry_id_2, speed, status, requested_at, started_at, completed_at FROM showcase_queue LIMIT 0")
+            conn.execute(
+                "SELECT id, entry_id_1, entry_id_2, speed, status, requested_at, started_at, "
+                "completed_at FROM showcase_queue LIMIT 0")
         finally:
             conn.close()
 
     def test_showcase_games_table_exists(self, db: str) -> None:
         conn = _connect(db)
         try:
-            conn.execute("SELECT id, queue_id, entry_id_black, entry_id_white, elo_black, elo_white, name_black, name_white, status, abandon_reason, started_at, completed_at, total_ply FROM showcase_games LIMIT 0")
+            conn.execute(
+                "SELECT id, queue_id, entry_id_black, entry_id_white, elo_black, elo_white, name_black, "
+                "name_white, status, abandon_reason, started_at, completed_at, total_ply FROM "
+                "showcase_games LIMIT 0")
         finally:
             conn.close()
 
     def test_showcase_moves_table_exists(self, db: str) -> None:
         conn = _connect(db)
         try:
-            conn.execute("SELECT id, game_id, ply, action_index, usi_notation, board_json, hands_json, current_player, in_check, value_estimate, top_candidates, move_heatmap_json, move_usi, move_time_ms, created_at FROM showcase_moves LIMIT 0")
+            conn.execute(
+                "SELECT id, game_id, ply, action_index, usi_notation, board_json, hands_json, "
+                "current_player, in_check, value_estimate, top_candidates, move_heatmap_json, move_usi, "
+                "move_time_ms, created_at FROM showcase_moves LIMIT 0")
         finally:
             conn.close()
 
@@ -59,34 +84,21 @@ class TestShowcaseSchema:
         conn = _connect(db)
         try:
             conn.execute(
-                "INSERT INTO showcase_queue (entry_id_1, entry_id_2, speed, status, requested_at) VALUES ('a', 'b', 'normal', 'running', '2026-01-01T00:00:00Z')"
+                "INSERT INTO showcase_queue (entry_id_1, entry_id_2, speed, status, requested_at) VALUES "
+                "('a', 'b', 'normal', 'running', '2026-01-01T00:00:00Z')"
             )
             conn.commit()
             with pytest.raises(sqlite3.IntegrityError):
                 conn.execute(
-                    "INSERT INTO showcase_queue (entry_id_1, entry_id_2, speed, status, requested_at) VALUES ('c', 'd', 'normal', 'running', '2026-01-01T00:00:00Z')"
+                    "INSERT INTO showcase_queue (entry_id_1, entry_id_2, speed, status, requested_at) VALUES "
+                    "('c', 'd', 'normal', 'running', '2026-01-01T00:00:00Z')"
                 )
                 conn.commit()
         finally:
             conn.close()
 
 
-from keisei.db.showcase import (
-    queue_match,
-    claim_next_match,
-    read_queue,
-    cancel_match,
-    update_queue_speed,
-    create_showcase_game,
-    write_showcase_move,
-    read_showcase_moves_since,
-    read_active_showcase_game,
-    mark_game_completed,
-    mark_game_abandoned,
-    write_heartbeat,
-    read_heartbeat,
-    cleanup_orphaned_games,
-)
+
 
 
 class TestQueueOperations:
@@ -285,8 +297,6 @@ class TestCrashRecovery:
         assert game is None
 
 
-import concurrent.futures
-import threading
 
 
 class TestSQLiteConcurrency:

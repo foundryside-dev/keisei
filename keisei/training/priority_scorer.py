@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import Counter, deque
 
 from keisei.config import PriorityScorerConfig
-from keisei.training.match_scheduler import MATCH_CLASS_WEIGHTS, classify_match
+from keisei.training.match_scheduler import MATCH_CLASS_WEIGHTS, MatchClass, classify_match
 from keisei.training.opponent_store import OpponentEntry, Role
 
 
@@ -19,7 +19,7 @@ class PriorityScorer:
     def __init__(
         self,
         config: PriorityScorerConfig,
-        match_class_weights: dict | None = None,
+        match_class_weights: dict[MatchClass, float] | None = None,
     ) -> None:
         self.config = config
         self._match_class_weights = match_class_weights or MATCH_CLASS_WEIGHTS

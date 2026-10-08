@@ -9,14 +9,14 @@ import pytest
 
 from keisei.config import MatchSchedulerConfig
 from keisei.db import _connect, init_db
-from keisei.training.match_scheduler import MatchScheduler
-from keisei.training.opponent_store import EntryStatus, OpponentEntry, OpponentStore, Role
-from keisei.training.tournament_dispatcher import TournamentDispatcher
 from keisei.db.tournament_queue import (
     claim_next_pairing,
     get_active_queue_depth,
     get_round_status,
 )
+from keisei.training.match_scheduler import MatchScheduler
+from keisei.training.opponent_store import OpponentEntry, OpponentStore
+from keisei.training.tournament_dispatcher import TournamentDispatcher
 
 
 @pytest.fixture

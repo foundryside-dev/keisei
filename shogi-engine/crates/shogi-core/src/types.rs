@@ -52,14 +52,14 @@ impl Color {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum PieceType {
-    Pawn   = 1,
-    Lance  = 2,
+    Pawn = 1,
+    Lance = 2,
     Knight = 3,
     Silver = 4,
-    Gold   = 5,
+    Gold = 5,
     Bishop = 6,
-    Rook   = 7,
-    King   = 8,
+    Rook = 7,
+    King = 8,
 }
 
 impl PieceType {
@@ -99,13 +99,13 @@ impl PieceType {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum HandPieceType {
-    Pawn   = 1,
-    Lance  = 2,
+    Pawn = 1,
+    Lance = 2,
     Knight = 3,
     Silver = 4,
-    Gold   = 5,
+    Gold = 5,
     Bishop = 6,
-    Rook   = 7,
+    Rook = 7,
 }
 
 impl HandPieceType {
@@ -123,26 +123,26 @@ impl HandPieceType {
 
     pub fn to_piece_type(self) -> PieceType {
         match self {
-            HandPieceType::Pawn   => PieceType::Pawn,
-            HandPieceType::Lance  => PieceType::Lance,
+            HandPieceType::Pawn => PieceType::Pawn,
+            HandPieceType::Lance => PieceType::Lance,
             HandPieceType::Knight => PieceType::Knight,
             HandPieceType::Silver => PieceType::Silver,
-            HandPieceType::Gold   => PieceType::Gold,
+            HandPieceType::Gold => PieceType::Gold,
             HandPieceType::Bishop => PieceType::Bishop,
-            HandPieceType::Rook   => PieceType::Rook,
+            HandPieceType::Rook => PieceType::Rook,
         }
     }
 
     pub fn from_piece_type(pt: PieceType) -> Option<HandPieceType> {
         match pt {
-            PieceType::Pawn   => Some(HandPieceType::Pawn),
-            PieceType::Lance  => Some(HandPieceType::Lance),
+            PieceType::Pawn => Some(HandPieceType::Pawn),
+            PieceType::Lance => Some(HandPieceType::Lance),
             PieceType::Knight => Some(HandPieceType::Knight),
             PieceType::Silver => Some(HandPieceType::Silver),
-            PieceType::Gold   => Some(HandPieceType::Gold),
+            PieceType::Gold => Some(HandPieceType::Gold),
             PieceType::Bishop => Some(HandPieceType::Bishop),
-            PieceType::Rook   => Some(HandPieceType::Rook),
-            PieceType::King   => None,
+            PieceType::Rook => Some(HandPieceType::Rook),
+            PieceType::King => None,
         }
     }
 
@@ -414,17 +414,32 @@ mod tests {
     #[test]
     fn test_game_result_is_terminal() {
         assert!(!GameResult::InProgress.is_terminal());
-        assert!(GameResult::Checkmate { winner: Color::Black }.is_terminal());
+        assert!(
+            GameResult::Checkmate {
+                winner: Color::Black
+            }
+            .is_terminal()
+        );
         assert!(GameResult::Impasse { winner: None }.is_terminal());
         assert!(GameResult::Repetition.is_terminal());
-        assert!(GameResult::PerpetualCheck { winner: Color::White }.is_terminal());
+        assert!(
+            GameResult::PerpetualCheck {
+                winner: Color::White
+            }
+            .is_terminal()
+        );
         assert!(GameResult::MaxMoves.is_terminal());
     }
 
     #[test]
     fn test_game_result_is_truncation() {
         assert!(!GameResult::InProgress.is_truncation());
-        assert!(!GameResult::Checkmate { winner: Color::Black }.is_truncation());
+        assert!(
+            !GameResult::Checkmate {
+                winner: Color::Black
+            }
+            .is_truncation()
+        );
         assert!(!GameResult::Repetition.is_truncation());
         assert!(GameResult::MaxMoves.is_truncation());
     }
@@ -432,12 +447,37 @@ mod tests {
     #[test]
     fn test_game_result_is_truncation_exhaustive() {
         // Ensure ALL non-MaxMoves variants return false
-        assert!(!GameResult::PerpetualCheck { winner: Color::Black }.is_truncation());
-        assert!(!GameResult::PerpetualCheck { winner: Color::White }.is_truncation());
+        assert!(
+            !GameResult::PerpetualCheck {
+                winner: Color::Black
+            }
+            .is_truncation()
+        );
+        assert!(
+            !GameResult::PerpetualCheck {
+                winner: Color::White
+            }
+            .is_truncation()
+        );
         assert!(!GameResult::Impasse { winner: None }.is_truncation());
-        assert!(!GameResult::Impasse { winner: Some(Color::Black) }.is_truncation());
-        assert!(!GameResult::Impasse { winner: Some(Color::White) }.is_truncation());
-        assert!(!GameResult::Checkmate { winner: Color::White }.is_truncation());
+        assert!(
+            !GameResult::Impasse {
+                winner: Some(Color::Black)
+            }
+            .is_truncation()
+        );
+        assert!(
+            !GameResult::Impasse {
+                winner: Some(Color::White)
+            }
+            .is_truncation()
+        );
+        assert!(
+            !GameResult::Checkmate {
+                winner: Color::White
+            }
+            .is_truncation()
+        );
     }
 
     // -- ShogiError Display ---------------------------------------------------
@@ -452,7 +492,11 @@ mod tests {
 
         let e3 = ShogiError::GameOver(GameResult::MaxMoves);
         let s = format!("{}", e3);
-        assert!(s.contains("game is over"), "GameOver display should contain 'game is over': {}", s);
+        assert!(
+            s.contains("game is over"),
+            "GameOver display should contain 'game is over': {}",
+            s
+        );
 
         let e4 = ShogiError::IllegalMove(Move::Drop {
             to: Square::new(40).unwrap(),
@@ -572,12 +616,15 @@ mod tests {
     fn test_piece_type_from_u8_full_range() {
         let mut valid_count = 0;
         for v in 0u8..=255 {
-            match PieceType::from_u8(v) {
-                Some(_) => valid_count += 1,
-                None => {}
+            if PieceType::from_u8(v).is_some() {
+                valid_count += 1;
             }
         }
-        assert_eq!(valid_count, PieceType::COUNT, "should have exactly 8 valid PieceType values");
+        assert_eq!(
+            valid_count,
+            PieceType::COUNT,
+            "should have exactly 8 valid PieceType values"
+        );
     }
 
     /// HandPieceType::ALL has exactly COUNT elements, all unique.
@@ -585,7 +632,11 @@ mod tests {
     fn test_hand_piece_type_all_unique() {
         let mut seen = std::collections::HashSet::new();
         for &hpt in &HandPieceType::ALL {
-            assert!(seen.insert(hpt), "duplicate in HandPieceType::ALL: {:?}", hpt);
+            assert!(
+                seen.insert(hpt),
+                "duplicate in HandPieceType::ALL: {:?}",
+                hpt
+            );
         }
         assert_eq!(seen.len(), HandPieceType::COUNT);
     }
@@ -595,24 +646,66 @@ mod tests {
     fn test_game_result_variants_complete() {
         let variants = [
             (GameResult::InProgress, false, false),
-            (GameResult::Checkmate { winner: Color::Black }, true, false),
-            (GameResult::Checkmate { winner: Color::White }, true, false),
+            (
+                GameResult::Checkmate {
+                    winner: Color::Black,
+                },
+                true,
+                false,
+            ),
+            (
+                GameResult::Checkmate {
+                    winner: Color::White,
+                },
+                true,
+                false,
+            ),
             (GameResult::Impasse { winner: None }, true, false),
-            (GameResult::Impasse { winner: Some(Color::Black) }, true, false),
-            (GameResult::Impasse { winner: Some(Color::White) }, true, false),
+            (
+                GameResult::Impasse {
+                    winner: Some(Color::Black),
+                },
+                true,
+                false,
+            ),
+            (
+                GameResult::Impasse {
+                    winner: Some(Color::White),
+                },
+                true,
+                false,
+            ),
             (GameResult::Repetition, true, false),
-            (GameResult::PerpetualCheck { winner: Color::Black }, true, false),
-            (GameResult::PerpetualCheck { winner: Color::White }, true, false),
+            (
+                GameResult::PerpetualCheck {
+                    winner: Color::Black,
+                },
+                true,
+                false,
+            ),
+            (
+                GameResult::PerpetualCheck {
+                    winner: Color::White,
+                },
+                true,
+                false,
+            ),
             (GameResult::MaxMoves, true, true),
         ];
         for (result, expected_terminal, expected_truncation) in variants {
             assert_eq!(
-                result.is_terminal(), expected_terminal,
-                "{:?}.is_terminal() should be {}", result, expected_terminal
+                result.is_terminal(),
+                expected_terminal,
+                "{:?}.is_terminal() should be {}",
+                result,
+                expected_terminal
             );
             assert_eq!(
-                result.is_truncation(), expected_truncation,
-                "{:?}.is_truncation() should be {}", result, expected_truncation
+                result.is_truncation(),
+                expected_truncation,
+                "{:?}.is_truncation() should be {}",
+                result,
+                expected_truncation
             );
         }
     }

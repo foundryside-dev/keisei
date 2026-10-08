@@ -4,7 +4,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
 
 import numpy as np
 import pytest
@@ -12,10 +11,10 @@ import torch
 import torch.nn as nn
 
 from keisei.showcase.inference import (
+    ModelCache,
     enforce_cpu_only,
     load_model_for_showcase,
     run_inference,
-    ModelCache,
 )
 from keisei.training.model_registry import build_model
 

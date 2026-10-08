@@ -15,14 +15,11 @@ import threading
 from types import SimpleNamespace
 
 import numpy as np
-import pytest
-import torch
 
 from keisei.config import ConcurrencyConfig
 from keisei.training.concurrent_matches import ConcurrentMatchPool
 from keisei.training.opponent_store import OpponentEntry, Role
 from tests._helpers import TinyModel
-
 
 # ---------------------------------------------------------------------------
 # Helpers

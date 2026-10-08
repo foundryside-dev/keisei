@@ -206,7 +206,6 @@ class TestAllConfigDefaults:
         assert c.grad_clip == 1.0
         assert c.update_every_matches == 4
         assert c.max_updates_per_minute == 20
-        assert c.checkpoint_flush_every == 8
         assert c.batch_reuse == 1
 
     def test_historical_library_defaults(self):
@@ -374,7 +373,6 @@ lr_scale = 0.5
 grad_clip = 2.0
 update_every_matches = 2
 max_updates_per_minute = 10
-checkpoint_flush_every = 4
 batch_reuse = 2
 
 [league.scheduler]
@@ -476,7 +474,6 @@ def test_toml_round_trip_all_sections(tmp_path):
     assert lg.dynamic.grad_clip == 2.0
     assert lg.dynamic.update_every_matches == 2
     assert lg.dynamic.max_updates_per_minute == 10
-    assert lg.dynamic.checkpoint_flush_every == 4
     assert lg.dynamic.batch_reuse == 2
 
     # Scheduler

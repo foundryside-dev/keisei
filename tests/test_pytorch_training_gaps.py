@@ -1,6 +1,6 @@
 # tests/test_pytorch_audit_gaps.py
 """Tests closing PyTorch audit gaps: checkpoint completeness, gradient flow,
-numerical stability, value consistency, buffer lifecycle, and GAE fallback."""
+numerical stability, value consistency, buffer lifecycle, and trajectory identity."""
 
 import random
 
@@ -9,7 +9,6 @@ import pytest
 import torch
 
 from keisei.training.checkpoint import load_checkpoint, save_checkpoint
-from keisei.training.gae import compute_gae
 from keisei.training.katago_loop import split_merge_step
 from keisei.training.katago_ppo import (
     KataGoPPOAlgorithm,
@@ -368,59 +367,24 @@ class TestBufferMemoryLifecycle:
 
 
 # ---------------------------------------------------------------------------
-# 6. Per-env GAE fallback path (no env_ids)
+# 6. Partial rollouts require environment identity
 # ---------------------------------------------------------------------------
 
 
-class TestPerEnvGAEFallback:
-    def test_fallback_flat_gae_without_env_ids(self):
-        """When split-merge data lacks env_ids, update() should use flat
-        GAE with mean bootstrap — verify it produces finite metrics."""
-        model = _small_model()
-        ppo = KataGoPPOAlgorithm(KataGoPPOParams(epochs_per_batch=1), model)
-
-        # Create buffer with non-matching T*N (simulate split-merge variable steps)
-        buf = KataGoRolloutBuffer(
-            num_envs=4, obs_shape=(50, 9, 9), action_space=11259,
-        )
-        # Add 3 steps but only for 2 envs each time (variable)
-        for _ in range(3):
-            n = 2  # variable number of envs per step
+class TestPerEnvGAEIdentity:
+    def test_partial_batch_without_env_ids_is_rejected(self):
+        """Averaging bootstraps cannot preserve independent trajectories."""
+        buf = KataGoRolloutBuffer(4, (50, 9, 9), 11259)
+        n = 2
+        with pytest.raises(ValueError, match="Partial environment batches require explicit env_ids"):
             buf.add(
                 obs=torch.randn(n, 50, 9, 9),
-                actions=torch.randint(0, 11259, (n,)),
-                log_probs=torch.randn(n),
-                values=torch.randn(n),
-                rewards=torch.zeros(n),
-                dones=torch.zeros(n, dtype=torch.bool),
-                terminated=torch.zeros(n, dtype=torch.bool),
+                actions=torch.zeros(n, dtype=torch.long), log_probs=torch.zeros(n),
+                values=torch.zeros(n), rewards=torch.zeros(n),
+                dones=torch.zeros(n, dtype=torch.bool), terminated=torch.zeros(n, dtype=torch.bool),
                 legal_masks=torch.ones(n, 11259, dtype=torch.bool),
-                value_categories=torch.full((n,), -1, dtype=torch.long),
-                score_targets=torch.randn(n).clamp(-1.5, 1.5),
+                value_categories=torch.full((n,), -1, dtype=torch.long), score_targets=torch.zeros(n),
             )
-        # total_samples = 6 != T*N = 3*4 = 12, and no env_ids → fallback path
-
-        next_values = torch.zeros(4)
-        metrics = ppo.update(buf, next_values)
-
-        for key, val in metrics.items():
-            if isinstance(val, float):
-                assert np.isfinite(val), f"{key} is not finite in fallback GAE: {val}"
-
-    def test_fallback_uses_mean_bootstrap(self):
-        """Fallback path should use mean of next_values as bootstrap."""
-        rewards = torch.tensor([1.0, 0.5, -0.5])
-        values = torch.tensor([0.1, 0.2, 0.3])
-        dones = torch.tensor([0.0, 0.0, 0.0])
-        next_values = torch.tensor([0.4, 0.6])
-        bootstrap = next_values.mean()
-
-        # The fallback calls compute_gae with scalar bootstrap
-        advantages = compute_gae(rewards, values, dones, bootstrap,
-                                 gamma=0.99, lam=0.95)
-
-        assert advantages.shape == (3,)
-        assert torch.isfinite(advantages).all()
 
 
 # ---------------------------------------------------------------------------

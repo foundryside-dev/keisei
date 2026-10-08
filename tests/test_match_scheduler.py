@@ -5,7 +5,6 @@ from collections import Counter
 import pytest
 
 from keisei.config import HistoricalLibraryConfig, MatchSchedulerConfig, PriorityScorerConfig
-from keisei.training.opponent_store import OpponentEntry, Role, EntryStatus
 from keisei.training.match_scheduler import (
     MATCH_CLASS_WEIGHTS,
     MatchClass,
@@ -13,6 +12,7 @@ from keisei.training.match_scheduler import (
     classify_match,
     is_training_match,
 )
+from keisei.training.opponent_store import EntryStatus, OpponentEntry, Role
 from keisei.training.priority_scorer import PriorityScorer
 
 
