@@ -60,13 +60,10 @@ impl MoveList {
         self.len == 0
     }
 
-    /// Return the move at `index`. Panics in debug builds if out of bounds.
-    ///
-    /// # Safety
-    /// The caller must ensure `index < self.len()`.
+    /// Return the move at `index`. Panics if `index >= self.len()`.
     #[inline]
     pub fn get(&self, index: usize) -> Move {
-        debug_assert!(index < self.len, "MoveList index out of bounds");
+        assert!(index < self.len, "MoveList index out of bounds");
         // SAFETY: index < len, so this slot was written by `push`.
         unsafe { self.moves[index].assume_init() }
     }
@@ -112,6 +109,17 @@ mod tests {
             to: Square::new_unchecked(idx + 1),
             promote: false,
         }
+    }
+
+    #[test]
+    #[should_panic(expected = "MoveList index out of bounds")]
+    fn test_get_rejects_a_cleared_slot_in_release() {
+        // Initialize the backing slot first, so the old implementation's
+        // release-mode failure can be tested without reading uninitialized data.
+        let mut moves = MoveList::new();
+        moves.push(dummy_move(0));
+        moves.clear();
+        moves.get(0);
     }
 
     #[test]

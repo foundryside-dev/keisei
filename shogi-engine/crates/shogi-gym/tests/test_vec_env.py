@@ -19,7 +19,7 @@ class TestVecEnvSpectatorData:
         env.reset()
         data = env.get_spectator_data()
         d = data[0]
-        expected_keys = {"board", "hands", "current_player", "ply", "is_over", "result", "sfen", "in_check", "move_history"}
+        expected_keys = {"board", "hands", "current_player", "ply", "is_over", "result", "winner", "sfen", "in_check", "move_history"}
         assert set(d.keys()) == expected_keys
 
     def test_get_spectator_data_startpos_values(self):
@@ -31,6 +31,7 @@ class TestVecEnvSpectatorData:
         assert d["ply"] == 0
         assert d["is_over"] is False
         assert d["result"] == "in_progress"
+        assert d["winner"] is None
         assert d["in_check"] is False
         assert len(d["board"]) == 81
         assert "lnsgkgsnl" in d["sfen"].lower()

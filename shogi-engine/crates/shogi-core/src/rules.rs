@@ -290,6 +290,11 @@ pub fn check_sennichite(game: &GameState) -> Option<GameResult> {
 /// Rook/Bishop = 5, all others (except King) = 1. Both board pieces and hand
 /// pieces count toward the score.
 pub fn check_impasse(game: &GameState) -> Option<GameResult> {
+    // Entry and material alone do not establish an impasse while a king is
+    // under attack. In particular, they must never erase a mating result.
+    if game.is_color_in_check(Color::Black) || game.is_color_in_check(Color::White) {
+        return None;
+    }
     let pos = &game.position;
 
     // 1. Find both kings.
@@ -475,6 +480,37 @@ mod tests {
     use crate::game::GameState;
     use crate::position::Position;
     use crate::types::{Color, Square};
+
+    #[test]
+    fn test_impasse_does_not_adjudicate_a_checked_king() {
+        // Full material is conserved, and both entry/count/point thresholds
+        // are met. Black nevertheless has a check to answer.
+        let game = GameState::from_sfen(
+            "K7r/Lg6r/P1PPPPPPP/9/9/9/pppppppp1/8l/8k b B4S4N2Pb3g2l 1",
+            500,
+        )
+        .unwrap();
+        assert!(game.is_in_check());
+        assert_eq!(check_impasse(&game), None);
+    }
+
+    #[test]
+    fn test_checkmate_takes_precedence_over_impasse() {
+        let mut game = GameState::from_sfen(
+            "Kr7/Lg6r/P1PPPPPPP/9/9/9/pppppppp1/8l/8k b B4S4N2Pb3g2l 1",
+            0,
+        )
+        .unwrap();
+        assert!(game.is_in_check());
+        assert!(game.legal_moves().is_empty());
+        game.check_termination();
+        assert_eq!(
+            game.result,
+            GameResult::Checkmate {
+                winner: Color::White
+            }
+        );
+    }
 
     #[test]
     fn test_impasse_score_starting() {

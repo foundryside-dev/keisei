@@ -172,9 +172,9 @@ impl Position {
     /// Parse a SFEN string into a `Position`.
     pub fn from_sfen(sfen: &str) -> Result<Position, ShogiError> {
         let parts: Vec<&str> = sfen.split_whitespace().collect();
-        if parts.len() < 3 {
+        if parts.len() != 4 {
             return Err(ShogiError::InvalidSfen(format!(
-                "expected at least 3 space-separated fields, got {}",
+                "expected 4 space-separated fields, got {}",
                 parts.len()
             )));
         }
@@ -182,7 +182,13 @@ impl Position {
         let board_str = parts[0];
         let side_str = parts[1];
         let hands_str = parts[2];
-        // parts[3] is the move number — we ignore it
+        // Positions carry no history, but the move-number field must still be
+        // well formed. Serialization deliberately normalizes it to 1.
+        if !parts[3].bytes().all(|ch| ch.is_ascii_digit())
+            || parts[3].parse::<u32>().ok().filter(|n| *n > 0).is_none()
+        {
+            return Err(ShogiError::InvalidSfen("invalid move number".into()));
+        }
 
         let mut pos = Position::empty();
 
@@ -220,6 +226,11 @@ impl Position {
                     pos.set_piece(sq, piece);
                     col += 1;
                 } else if ch.is_ascii_digit() {
+                    if chars.peek().is_some_and(char::is_ascii_digit) {
+                        return Err(ShogiError::InvalidSfen(
+                            "adjacent empty-square counts in rank".into(),
+                        ));
+                    }
                     let empty = ch as u8 - b'0';
                     if empty == 0 || empty > 9 {
                         return Err(ShogiError::InvalidSfen(format!(
@@ -271,6 +282,11 @@ impl Position {
             while let Some(ch) = chars.peek().copied() {
                 // Optional count prefix
                 let count: u8 = if ch.is_ascii_digit() {
+                    if ch == '0' {
+                        return Err(ShogiError::InvalidSfen(
+                            "hand count must be positive without leading zeros".into(),
+                        ));
+                    }
                     // Consume digits (multi-digit count, e.g., "18p")
                     let mut num_str = String::new();
                     while let Some(&d) = chars.peek() {
@@ -314,6 +330,18 @@ impl Position {
                     }
                 };
 
+                // Hash tables support counts 0..=18. Position intentionally
+                // permits synthetic material, but never unsupported indices.
+                if count > 18 {
+                    return Err(ShogiError::InvalidSfen(format!(
+                        "hand count {count} exceeds supported maximum 18"
+                    )));
+                }
+                if pos.hand_count(color, hpt) != 0 {
+                    return Err(ShogiError::InvalidSfen(format!(
+                        "duplicate hand piece '{piece_ch}'"
+                    )));
+                }
                 pos.set_hand_count(color, hpt, count);
             }
         }
@@ -332,6 +360,38 @@ impl Position {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_sfen_rejects_unsupported_hand_counts_without_panicking() {
+        for count in [19, 255, 256] {
+            let sfen = format!("4k4/9/9/9/9/9/9/9/4K4 b {count}P 1");
+            let parsed = std::panic::catch_unwind(|| Position::from_sfen(&sfen));
+            assert!(parsed.is_ok(), "parser panicked for hand count {count}");
+            assert!(parsed.unwrap().is_err(), "accepted hand count {count}");
+        }
+    }
+
+    #[test]
+    fn test_sfen_rejects_duplicate_or_zero_hand_entries() {
+        for hand in ["PP", "P2P", "p2p", "0P", "00p", "01P"] {
+            let sfen = format!("4k4/9/9/9/9/9/9/9/4K4 b {hand} 1");
+            assert!(Position::from_sfen(&sfen).is_err(), "accepted {hand}");
+        }
+    }
+
+    #[test]
+    fn test_sfen_requires_a_positive_u32_move_number_and_four_fields() {
+        let position = "4k4/9/9/9/9/9/9/9/4K4 b -";
+        for suffix in ["", " 0", " -1", " x", " 4294967296", " 1 extra"] {
+            assert!(Position::from_sfen(&format!("{position}{suffix}")).is_err());
+        }
+        assert!(Position::from_sfen(&format!("{position} 4294967295")).is_ok());
+    }
+
+    #[test]
+    fn test_sfen_rejects_adjacent_empty_square_counts() {
+        assert!(Position::from_sfen("45/9/9/9/9/9/9/9/9 b - 1").is_err());
+    }
 
     #[test]
     fn test_startpos_sfen_roundtrip() {

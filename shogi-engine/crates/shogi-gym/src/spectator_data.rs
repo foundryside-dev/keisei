@@ -239,6 +239,18 @@ pub fn build_spectator_dict(py: Python<'_>, game: &GameState) -> PyResult<Py<PyD
     d.set_item("ply", game.ply as i64)?;
     d.set_item("is_over", game.result.is_terminal())?;
     d.set_item("result", game_result_str(&game.result))?;
+    let winner = match game.result {
+        GameResult::Checkmate { winner }
+        | GameResult::PerpetualCheck { winner }
+        | GameResult::Impasse {
+            winner: Some(winner),
+        } => Some(color_name(winner)),
+        GameResult::InProgress
+        | GameResult::Repetition
+        | GameResult::Impasse { winner: None }
+        | GameResult::MaxMoves => None,
+    };
+    d.set_item("winner", winner)?;
     d.set_item("sfen", game.position.to_sfen())?;
     d.set_item("in_check", game.is_in_check())?;
 
@@ -253,6 +265,67 @@ pub fn build_spectator_dict(py: Python<'_>, game: &GameState) -> PyResult<Py<PyD
 mod tests {
     use super::*;
     use shogi_core::{Piece, Position};
+
+    #[test]
+    fn test_spectator_dict_exposes_the_explicit_winner_for_every_result() {
+        pyo3::prepare_freethreaded_python();
+        Python::with_gil(|py| {
+            let mut game = GameState::new();
+            for (result, expected) in [
+                (GameResult::InProgress, None),
+                (
+                    GameResult::Checkmate {
+                        winner: Color::Black,
+                    },
+                    Some("black"),
+                ),
+                (
+                    GameResult::Checkmate {
+                        winner: Color::White,
+                    },
+                    Some("white"),
+                ),
+                (
+                    GameResult::PerpetualCheck {
+                        winner: Color::Black,
+                    },
+                    Some("black"),
+                ),
+                (
+                    GameResult::PerpetualCheck {
+                        winner: Color::White,
+                    },
+                    Some("white"),
+                ),
+                (
+                    GameResult::Impasse {
+                        winner: Some(Color::Black),
+                    },
+                    Some("black"),
+                ),
+                (
+                    GameResult::Impasse {
+                        winner: Some(Color::White),
+                    },
+                    Some("white"),
+                ),
+                (GameResult::Impasse { winner: None }, None),
+                (GameResult::Repetition, None),
+                (GameResult::MaxMoves, None),
+            ] {
+                game.result = result;
+                let state = build_spectator_dict(py, &game).unwrap();
+                let winner = state
+                    .bind(py)
+                    .get_item("winner")
+                    .unwrap()
+                    .expect("all spectator states must include the winner field")
+                    .extract::<Option<String>>()
+                    .unwrap();
+                assert_eq!(winner.as_deref(), expected, "result {result:?}");
+            }
+        });
+    }
 
     #[test]
     fn test_piece_type_name_all() {
