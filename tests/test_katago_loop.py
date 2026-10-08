@@ -131,6 +131,18 @@ def _make_config(tmp_path: Path | None = None) -> AppConfig:
 
 
 class TestDDPInit:
+    def test_multi_head_ddp_rejects_disabled_unused_parameter_detection(self, tmp_path):
+        from keisei.config import DistributedConfig
+
+        config = dataclasses.replace(
+            _make_config(tmp_path),
+            distributed=DistributedConfig(sync_batchnorm=False, find_unused_parameters=False),
+        )
+        ctx = DistributedContext(rank=1, local_rank=0, world_size=2, is_distributed=True)
+        with patch("keisei.training.katago_loop.build_model", side_effect=AssertionError("too late")):
+            with pytest.raises(ValueError, match="find_unused_parameters=True"):
+                KataGoTrainingLoop(config, vecenv=_make_mock_katago_vecenv(), dist_ctx=ctx)
+
     def test_training_loop_accepts_dist_context(self):
         """KataGoTrainingLoop accepts a DistributedContext."""
         ctx = DistributedContext(rank=0, local_rank=0, world_size=1, is_distributed=False)

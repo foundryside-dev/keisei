@@ -453,34 +453,28 @@ impl GameState {
     /// is detected.
     ///
     /// Checks in order:
-    /// 1. Max ply reached
-    /// 2. Sennichite / perpetual check
-    /// 3. Impasse (CSA 24-point rule)
-    /// 4. Checkmate / stalemate (no legal moves)
+    /// 1. Sennichite / perpetual check
+    /// 2. Impasse (CSA 24-point rule)
+    /// 3. Checkmate / stalemate (no legal moves)
+    /// 4. Max ply reached, only if the game has no genuine terminal outcome
     pub fn check_termination(&mut self) {
         if self.result.is_terminal() {
             return;
         }
 
-        // 1. Max ply.
-        if self.ply >= self.max_ply {
-            self.result = GameResult::MaxMoves;
-            return;
-        }
-
-        // 2. Sennichite / perpetual check.
+        // 1. Sennichite / perpetual check.
         if let Some(result) = crate::rules::check_sennichite(self) {
             self.result = result;
             return;
         }
 
-        // 3. Impasse.
+        // 2. Impasse.
         if let Some(result) = crate::rules::check_impasse(self) {
             self.result = result;
             return;
         }
 
-        // 4. No legal moves: checkmate or stalemate.
+        // 3. No legal moves: checkmate or stalemate.
         let moves = self.legal_moves();
         if moves.is_empty() {
             if self.is_in_check() {
@@ -495,6 +489,10 @@ impl GameState {
                     winner: self.position.current_player.opponent(),
                 };
             }
+        } else if self.ply >= self.max_ply {
+            // 4. Truncate only an otherwise ongoing game. A mate or repetition
+            // on the last allowed ply must retain its terminal reward.
+            self.result = GameResult::MaxMoves;
         }
     }
 

@@ -1279,6 +1279,50 @@ mod tests {
         assert_eq!(reward, 0.0, "MaxMoves should give 0.0 reward");
     }
 
+    #[test]
+    fn test_checkmate_on_max_ply_emits_terminal_win_and_resets() {
+        use shogi_core::Square;
+
+        let _lock = TEST_PANIC_MUTEX.lock().unwrap();
+        for katago in [false, true] {
+            let mut env = if katago {
+                make_env_with_modes(
+                    1,
+                    1,
+                    ObsMode::KataGo(KataGoObservationGenerator::new()),
+                    ActionMode::Spatial(SpatialActionMapper),
+                )
+            } else {
+                make_env(1, 1)
+            };
+            env.games[0] = GameState::from_sfen("4k4/9/5S3/9/9/9/9/9/4K4 b G 1", 1).unwrap();
+            env.write_obs_and_mask(0);
+            let mate = Move::Drop {
+                to: Square::from_row_col(1, 4).unwrap(),
+                piece_type: HandPieceType::Gold,
+            };
+            let action = env.mapper.encode(mate, Color::Black).unwrap();
+            assert!(env.legal_mask_buffer[action]);
+
+            assert_eq!(env.apply_moves(&[mate]), 0);
+            assert!(env.terminated_buffer[0]);
+            assert!(!env.truncated_buffer[0]);
+            assert_eq!(env.reward_buffer[0], 1.0);
+            assert_eq!(
+                env.term_reason_buffer[0],
+                TerminationReason::Checkmate as u8
+            );
+            assert_eq!(env.episodes_truncated.load(Ordering::Relaxed), 0);
+            assert_eq!(env.terminal_obs_buffer[43 * 81], 1.0);
+            assert_eq!(env.games[0].ply, 0);
+            assert_eq!(env.current_players_buffer[0], 0);
+            assert_eq!(
+                env.legal_mask_buffer.iter().filter(|&&legal| legal).count(),
+                30
+            );
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Episode counter and auto-reset simulation (no Python needed)
     // -----------------------------------------------------------------------

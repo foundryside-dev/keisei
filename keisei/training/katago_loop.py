@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 
 from keisei.config import AppConfig, load_config
 
@@ -52,8 +51,8 @@ from keisei.training.katago_ppo import (
 from keisei.training.match_scheduler import MatchScheduler, build_match_class_weights
 from keisei.training.model_registry import build_model
 from keisei.training.opponent_store import OpponentEntry, OpponentStore, Role
+from keisei.training.policy import masked_categorical
 from keisei.training.priority_scorer import PriorityScorer
-from keisei.training.role_elo import RoleEloTracker
 from keisei.training.tiered_pool import TieredPool
 from keisei.training.tournament import LeagueTournament
 from keisei.training.tournament_dispatcher import TournamentDispatcher
@@ -331,9 +330,8 @@ def split_merge_step(
     learner_values = torch.zeros(0, device=device)
 
     # Learner forward pass (eval mode, no_grad for rollout collection).
-    # The model stays in eval() — the caller (ppo.update) switches to train()
-    # only during the backward pass. Toggling back to train() here would
-    # corrupt BatchNorm running statistics with rollout-context updates.
+    # PPO gradient forwards also use eval mode so likelihood ratios compare
+    # the same normalization. Autograd remains enabled during optimization.
     if learner_indices.numel() > 0:
         l_obs = obs[learner_indices]
         l_masks = legal_masks[learner_indices]
@@ -350,9 +348,7 @@ def split_merge_step(
                 f"Learner envs {zero_envs} have zero legal actions — "
                 f"all-False legal mask would produce NaN"
             )
-        l_masked = l_flat.masked_fill(~l_masks, float("-inf"))
-        l_probs = F.softmax(l_masked, dim=-1)
-        l_dist = torch.distributions.Categorical(l_probs, validate_args=False)
+        l_dist = masked_categorical(l_flat, l_masks)
         l_actions = l_dist.sample()
         learner_log_probs = l_dist.log_prob(l_actions)
 
@@ -412,9 +408,7 @@ def split_merge_step(
                 f"Opponent envs {zero_envs} have zero legal actions — "
                 f"all-False legal mask would produce NaN"
             )
-        o_masked = o_flat.masked_fill(~o_masks, float("-inf"))
-        o_probs = F.softmax(o_masked, dim=-1)
-        o_dist = torch.distributions.Categorical(o_probs, validate_args=False)
+        o_dist = masked_categorical(o_flat, o_masks)
         o_actions = o_dist.sample()
 
         if cross_device:
@@ -486,6 +480,14 @@ class KataGoTrainingLoop:
             raise ValueError(
                 f"algorithm='katago_ppo' requires a KataGoBaseModel architecture "
                 f"(one of {_KATAGO_ARCHITECTURES}), got '{config.model.architecture}'"
+            )
+
+        if (self.dist_ctx.is_distributed
+                and config.model.architecture in _KATAGO_ARCHITECTURES
+                and not config.distributed.find_unused_parameters):
+            raise ValueError(
+                "Multi-head DDP requires find_unused_parameters=True: WDL labels can be "
+                "absent from a minibatch and disabled heads must remain disconnected."
             )
 
         self.model: torch.nn.Module = build_model(config.model.architecture, config.model.params)
@@ -630,13 +632,17 @@ class KataGoTrainingLoop:
         # _loaded_by_role) is gated by _opponent_results being non-None, so an
         # empty _loaded_by_role from __init__ can never reach sample_for_learner.
         self._opponent_models: dict[int, torch.nn.Module] | None = None
-        self._opponent_pool_fingerprint: frozenset[tuple[int, str]] = frozenset()
+        self._opponent_pool_fingerprint: frozenset[tuple[int, str, str | None]] = frozenset()
         self._opponent_device_map: dict[int, torch.device | None] = {}
         self._env_opponent_ids: np.ndarray | None = None
         self._cached_entries: list[OpponentEntry] = []
         self._cached_entries_by_id: dict[int, OpponentEntry] = {}
         self._loaded_by_role: dict[Role, list[OpponentEntry]] = {}
         self._opponent_results: dict[int, list[int]] | None = None
+
+        # Restore the learner before publishing any league snapshot. Otherwise
+        # startup admits randomly initialized weights even when resuming SL/RL.
+        self._check_resume()
 
         if config.league is not None:
             league_dir = str(Path(config.training.checkpoint_dir) / "league")
@@ -654,12 +660,22 @@ class KataGoTrainingLoop:
             # Assign roles to any UNASSIGNED entries from a previous run.
             # Idempotent: no-op if already bootstrapped or no UNASSIGNED entries.
             self.tiered_pool.bootstrap_from_flat_pool()
-            # Bootstrap snapshot so pool is never empty
-            bootstrap_entry = self.tiered_pool.snapshot_learner(
-                self._base_model, config.model.architecture,
-                dict(config.model.params), epoch=0,
-            )
-            self._learner_entry_id = bootstrap_entry.id
+            if (self._learner_entry_id is not None
+                    and self.store.get_entry(self._learner_entry_id) is None):
+                self._learner_entry_id = None
+            # Existing pools retain their membership across restarts. Only an
+            # empty pool needs a snapshot of the restored learner to bootstrap.
+            if not self.store.list_entries():
+                bootstrap_entry = self.tiered_pool.snapshot_learner(
+                    self._base_model, config.model.architecture,
+                    dict(config.model.params), epoch=self.epoch,
+                )
+                self._learner_entry_id = bootstrap_entry.id
+            if self._learner_entry_id is not None:
+                update_training_progress(
+                    self.db_path, self.epoch, self.global_step,
+                    learner_entry_id=self._learner_entry_id,
+                )
             logger.info(
                 "Tiered league initialized: %d frontier, %d recent, %d dynamic slots",
                 config.league.frontier.slots,
@@ -713,8 +729,6 @@ class KataGoTrainingLoop:
                         priority_scorer=priority_scorer,
                     )
 
-        self._check_resume()
-
     @property
     def _base_model(self) -> torch.nn.Module:
         """Unwrap DataParallel/DDP wrapper if present."""
@@ -732,14 +746,14 @@ class KataGoTrainingLoop:
 
         # Rank 0 reads the DB to find checkpoint path; non-main ranks get None.
         checkpoint_path_str: str | None = None
-        current_epoch: int = 0
+        learner_entry_id: int | None = None
         if self.dist_ctx.is_main:
             state = read_training_state(self.db_path)
             if state is not None and state.get("checkpoint_path"):
                 cp = Path(state["checkpoint_path"])
                 if cp.exists():
                     checkpoint_path_str = str(cp)
-                    current_epoch = state.get("current_epoch", 0)
+                    learner_entry_id = state.get("learner_entry_id")
 
         # Broadcast checkpoint path to all ranks so everyone loads the same checkpoint.
         # In non-distributed mode, broadcast_object_list is not called.
@@ -747,11 +761,6 @@ class KataGoTrainingLoop:
             obj_list: list[object] = [checkpoint_path_str]
             dist.broadcast_object_list(obj_list, src=0)
             checkpoint_path_str = obj_list[0]  # type: ignore[assignment]
-
-            # Also broadcast epoch so non-main ranks know where to resume
-            meta_list: list[object] = [current_epoch]
-            dist.broadcast_object_list(meta_list, src=0)
-            current_epoch = meta_list[0]  # type: ignore[assignment]
 
         # ALL ranks load the checkpoint (critical for DDP weight consistency).
         # DDP does NOT re-broadcast weights after __init__() — if only rank 0
@@ -782,6 +791,17 @@ class KataGoTrainingLoop:
             else:
                 self.epoch = meta["epoch"]
                 self.global_step = meta["step"]
+                training_state = meta.get("training_state", {})
+                self._learner_entry_id = training_state.get("learner_entry_id", learner_entry_id)
+                if "warmup_epochs" in training_state:
+                    self.ppo.warmup_epochs = training_state["warmup_epochs"]
+                elif self.config.league is not None:
+                    # Older checkpoints omitted the seat-relative boundary.
+                    # Rotations occur at multiples of epochs_per_seat; the
+                    # checkpoint epoch is the next epoch to execute.
+                    seat_epochs = self.config.league.epochs_per_seat
+                    last_rotation = (self.epoch // seat_epochs) * seat_epochs
+                    self.ppo.warmup_epochs = last_rotation + self._original_warmup_duration
             return
 
         # Fresh start — only rank 0 writes training state to DB
@@ -868,6 +888,11 @@ class KataGoTrainingLoop:
             self.device
         )
         current_players = np.zeros(self.num_envs, dtype=np.uint8)
+        # Epochs (including seat rotations) continue these games without an
+        # environment reset. Keep each game's color until its done handler
+        # assigns a color for the next game.
+        game_learner_sides: np.ndarray | None = None
+        game_learner_sides_t: torch.Tensor | None = None
 
         start_epoch = self.epoch
         for epoch_i in range(start_epoch, start_epoch + num_epochs):
@@ -957,8 +982,14 @@ class KataGoTrainingLoop:
                     # Delta-load: reuse already-resident models across epochs
                     # when the sampled cohort overlaps with the previous one.
                     # Only the new entries incur disk I/O + GPU transfer.
+                    revisions: dict[int, str | None] = {}
+                    for entry in sampled_entries:
+                        try:
+                            revisions[entry.id] = self.store.checkpoint_version(entry)
+                        except FileNotFoundError:
+                            revisions[entry.id] = None
                     new_fingerprint = frozenset(
-                        (e.id, e.checkpoint_path) for e in sampled_entries
+                        (e.id, e.checkpoint_path, revisions[e.id]) for e in sampled_entries
                     )
                     pool_changed = new_fingerprint != self._opponent_pool_fingerprint
 
@@ -985,9 +1016,12 @@ class KataGoTrainingLoop:
                         # updates are small (§10.2: lr_scale=0.25, 2 epochs).
                         loaded_entries: list[OpponentEntry] = []
                         for e in sampled_entries:
-                            if e.id in current:
+                            if e.id in current and getattr(
+                                current[e.id], "_keisei_checkpoint_version", None,
+                            ) == revisions[e.id] and revisions[e.id] is not None:
                                 loaded_entries.append(e)
                                 continue
+                            current.pop(e.id, None)
                             try:
                                 current[e.id] = self.store.load_opponent(
                                     e, device=opp_device,
@@ -1001,7 +1035,13 @@ class KataGoTrainingLoop:
                             loaded_entries.append(e)
 
                         self._opponent_models = current
-                        self._opponent_pool_fingerprint = new_fingerprint
+                        # Record loaded revisions so a failed load or a save
+                        # racing this refresh is retried at the next epoch.
+                        self._opponent_pool_fingerprint = frozenset(
+                            (e.id, e.checkpoint_path, getattr(
+                                current[e.id], "_keisei_checkpoint_version", None,
+                            )) for e in loaded_entries
+                        )
                         # Set eval mode + pre-compute device map. Hoisted out
                         # of the rollout hot loop (199dc54): eval/device probe
                         # per step × K models × 512 steps adds up fast.
@@ -1083,24 +1123,6 @@ class KataGoTrainingLoop:
                         self._current_opponent_entry, device=opp_device,
                     )
 
-            # One-time LR scheduler reset for league mode to prevent value-loss
-            # spike from triggering premature LR reduction after reward-collection
-            # fix. Safe to remove once no pre-fix checkpoints are in use.
-            # Uses ReduceLROnPlateau internal attributes (best, mode_worse,
-            # num_bad_epochs) — guarded by hasattr for forward compatibility.
-            if (self._current_opponent is not None
-                    and self.lr_scheduler is not None
-                    and epoch_i == start_epoch
-                    and start_epoch > 0
-                    and hasattr(self.lr_scheduler, "best")):
-                self.lr_scheduler.best = self.lr_scheduler.mode_worse
-                self.lr_scheduler.num_bad_epochs = 0
-                if self.dist_ctx.is_main:
-                    logger.info(
-                        "LR scheduler reset at epoch %d for post-fix checkpoint continuity",
-                        epoch_i,
-                    )
-
             if (self._current_opponent is not None
                     and epoch_i == start_epoch
                     and start_epoch > 0
@@ -1133,8 +1155,15 @@ class KataGoTrainingLoop:
             )
             learner_side: int | np.ndarray
             if use_color_rand:
-                learner_side = np.random.randint(0, 2, size=self.num_envs, dtype=np.uint8)
-                learner_side_t = torch.from_numpy(learner_side.copy()).to(self.device)
+                if game_learner_sides is None:
+                    game_learner_sides = np.random.randint(
+                        0, 2, size=self.num_envs, dtype=np.uint8,
+                    )
+                    game_learner_sides_t = torch.from_numpy(
+                        game_learner_sides.copy(),
+                    ).to(self.device)
+                learner_side = game_learner_sides
+                learner_side_t = game_learner_sides_t
                 if epoch_i == start_epoch and self.dist_ctx.is_main:
                     logger.info(
                         "Color randomization enabled: win_rate now reflects "
@@ -1271,7 +1300,7 @@ class KataGoTrainingLoop:
                                 term_v = KataGoPPOAlgorithm.scalar_value(
                                     term_out.value_logits,
                                 )
-                        self.ppo.forward_model.train()
+                        self.ppo.forward_model.eval()
                         # Shogi alternates side every ply, so the player to move
                         # at terminal_obs is (1 - pre_players). Convert V from
                         # that perspective to learner perspective.
@@ -1513,7 +1542,7 @@ class KataGoTrainingLoop:
                             term_v = self.value_adapter.scalar_value_blended(
                                 term_out.value_logits, term_out.score_lead,
                             )
-                        self.ppo.forward_model.train()
+                        self.ppo.forward_model.eval()
                         # NaN sentinel; only truncated cells get a finite value,
                         # negated because terminal_obs is in opponent-of-mover
                         # perspective and GAE wants mover-of-step-t perspective.
@@ -1569,7 +1598,7 @@ class KataGoTrainingLoop:
                 next_values = self.value_adapter.scalar_value_blended(
                     output.value_logits, output.score_lead,
                 )
-            self.ppo.forward_model.train()
+            self.ppo.forward_model.eval()
 
             # Sign-correct bootstrap for split-merge mode: the value network
             # outputs from current-player perspective. When the opponent is to-move
@@ -1757,6 +1786,7 @@ class KataGoTrainingLoop:
 
             # Sidecar dispatcher: enqueue a tournament round if the queue has room.
             if self._dispatcher is not None:
+                assert self.config.league is not None
                 try:
                     from keisei.db.tournament_queue import (
                         get_active_queue_depth,
@@ -1811,16 +1841,21 @@ class KataGoTrainingLoop:
                             scheduler=self.lr_scheduler,
                             grad_scaler=self.ppo.scaler,
                             world_size=self.dist_ctx.world_size,
+                            training_state={
+                                "warmup_epochs": self.ppo.warmup_epochs,
+                                "learner_entry_id": self._learner_entry_id,
+                            },
                         )
                         logger.info("Checkpoint saved: %s", ckpt_path)
                     except Exception:
                         logger.exception("Failed to save checkpoint %s — continuing", ckpt_path)
-                    try:
-                        update_training_progress(
-                            self.db_path, epoch_i + 1, self.global_step, str(ckpt_path),
-                        )
-                    except Exception:
-                        logger.exception("Failed to record checkpoint path in DB — continuing")
+                    else:
+                        try:
+                            update_training_progress(
+                                self.db_path, epoch_i + 1, self.global_step, str(ckpt_path),
+                            )
+                        except Exception:
+                            logger.exception("Failed to record checkpoint path in DB — continuing")
 
                 # Barrier after save — all ranks proceed together
                 if self.dist_ctx.is_distributed:

@@ -9,7 +9,8 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
-import torch.nn.functional as F
+
+from keisei.training.policy import masked_categorical
 
 logger = logging.getLogger(__name__)
 
@@ -36,13 +37,27 @@ def _combine_rollouts(rollouts: list[MatchRollout]) -> MatchRollout:
     """Concatenate multiple batch rollouts along step dimension."""
     from keisei.training.dynamic_trainer import MatchRollout
 
+    # Each batch starts with vecenv.reset(). Its unfinished tails must stop
+    # here, rather than inheriting the next batch's terminal game outcome.
+    batch_dones = []
+    batch_terminated = []
+    for rollout in rollouts:
+        dones = rollout.dones.clone()
+        if dones.shape[0]:
+            dones[-1] = True
+        batch_dones.append(dones)
+        batch_terminated.append(rollout.terminated if rollout.terminated is not None else rollout.dones)
     return MatchRollout(
         observations=torch.cat([r.observations for r in rollouts], dim=0),
         actions=torch.cat([r.actions for r in rollouts], dim=0),
         rewards=torch.cat([r.rewards for r in rollouts], dim=0),
-        dones=torch.cat([r.dones for r in rollouts], dim=0),
+        dones=torch.cat(batch_dones, dim=0),
         legal_masks=torch.cat([r.legal_masks for r in rollouts], dim=0),
         perspective=torch.cat([r.perspective for r in rollouts], dim=0),
+        terminated=torch.cat(batch_terminated, dim=0),
+        log_probs=(torch.cat([r.log_probs for r in rollouts if r.log_probs is not None])
+                   if all(r.log_probs is not None for r in rollouts) else None),
+        checkpoint_versions=rollouts[0].checkpoint_versions,
     )
 
 
@@ -87,10 +102,12 @@ def play_match(
             active_envs=min(num_envs, games_remaining),
         )
         if collect_rollout:
+            assert len(batch_result) == 4
             a_wins, b_wins, draws, rollout = batch_result
             assert all_rollouts is not None
             all_rollouts.append(rollout)
         else:
+            assert len(batch_result) == 3
             a_wins, b_wins, draws = batch_result
         total_a_wins += a_wins
         total_b_wins += b_wins
@@ -168,6 +185,8 @@ def play_batch(
         step_actions: list[torch.Tensor] = []
         step_rewards: list[torch.Tensor] = []
         step_dones: list[torch.Tensor] = []
+        step_terminated: list[torch.Tensor] = []
+        step_log_probs: list[torch.Tensor] = []
         step_legal_masks: list[torch.Tensor] = []
         step_perspective: list[torch.Tensor] = []
 
@@ -184,13 +203,14 @@ def play_batch(
             rollout_perspective = pre_step_players.astype(np.int64, copy=True)
             rollout_perspective[~active_env_mask] = -1
             step_perspective.append(torch.from_numpy(rollout_perspective))
-            step_obs.append(obs.cpu())
-            step_legal_masks.append(legal_masks.cpu())
+            step_obs.append(obs.cpu().clone())
+            step_legal_masks.append(legal_masks.cpu().clone())
 
         player_a_mask = torch.from_numpy(current_players == 0).to(device)
         player_b_mask = ~player_a_mask
 
         actions = torch.zeros(num_envs, dtype=torch.long, device=device)
+        behavior_log_probs = torch.zeros(num_envs, device=device)
 
         # Guard: zero legal actions → all-inf softmax → NaN crash.
         # VecEnv should always provide ≥1 legal move, but defend against
@@ -209,9 +229,9 @@ def play_batch(
             with torch.no_grad():
                 a_out = model_a(obs[a_indices])
                 a_logits = a_out.policy_logits.reshape(a_indices.numel(), -1)
-                a_masked = a_logits.masked_fill(~legal_masks[a_indices], float("-inf"))
-                a_probs = F.softmax(a_masked, dim=-1)
-                actions[a_indices] = torch.distributions.Categorical(a_probs).sample()
+                a_dist = masked_categorical(a_logits, legal_masks[a_indices])
+                actions[a_indices] = a_dist.sample()
+                behavior_log_probs[a_indices] = a_dist.log_prob(actions[a_indices])
 
         # Model B forward
         b_indices = player_b_mask.nonzero(as_tuple=True)[0]
@@ -219,12 +239,13 @@ def play_batch(
             with torch.no_grad():
                 b_out = model_b(obs[b_indices])
                 b_logits = b_out.policy_logits.reshape(b_indices.numel(), -1)
-                b_masked = b_logits.masked_fill(~legal_masks[b_indices], float("-inf"))
-                b_probs = F.softmax(b_masked, dim=-1)
-                actions[b_indices] = torch.distributions.Categorical(b_probs).sample()
+                b_dist = masked_categorical(b_logits, legal_masks[b_indices])
+                actions[b_indices] = b_dist.sample()
+                behavior_log_probs[b_indices] = b_dist.log_prob(actions[b_indices])
 
         if collect_rollout:
-            step_actions.append(actions.cpu())
+            step_actions.append(actions.cpu().clone())
+            step_log_probs.append(behavior_log_probs.cpu().clone())
 
         step_result = vecenv.step(actions.cpu().numpy())
         obs = torch.from_numpy(np.asarray(step_result.observations)).to(device)
@@ -236,11 +257,12 @@ def play_batch(
 
         if collect_rollout:
             step_rewards.append(
-                torch.from_numpy(np.asarray(rewards, dtype=np.float32))
+                torch.from_numpy(np.asarray(rewards, dtype=np.float32).copy())
             )
             step_dones.append(
                 torch.from_numpy((terminated | truncated).astype(np.float32))
             )
+            step_terminated.append(torch.from_numpy(terminated.copy()))
 
         # Feature tracking — extract per-game behavioural stats
         if feature_tracker is not None:
@@ -280,6 +302,8 @@ def play_batch(
     if collect_rollout:
         from keisei.training.dynamic_trainer import MatchRollout
 
+        if step_dones:
+            step_dones[-1] = torch.ones_like(step_dones[-1])
         rollout = MatchRollout(
             observations=torch.stack(step_obs) if step_obs else torch.empty(0),
             actions=torch.stack(step_actions) if step_actions else torch.empty(0),
@@ -287,6 +311,10 @@ def play_batch(
             dones=torch.stack(step_dones) if step_dones else torch.empty(0),
             legal_masks=torch.stack(step_legal_masks) if step_legal_masks else torch.empty(0),
             perspective=torch.stack(step_perspective) if step_perspective else torch.empty(0),
+            terminated=torch.stack(step_terminated) if step_terminated else torch.empty(0),
+            log_probs=torch.stack(step_log_probs) if step_log_probs else torch.empty(0),
+            checkpoint_versions=(getattr(model_a, "_keisei_checkpoint_version", None),
+                                 getattr(model_b, "_keisei_checkpoint_version", None)),
         )
         return a_wins, b_wins, draws, rollout
 

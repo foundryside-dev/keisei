@@ -640,9 +640,9 @@ class TestSplitMergeGAEPath:
             value_cats = torch.full((n_learner,), -1, dtype=torch.long)
             score_targets = torch.rand(n_learner) * 2 - 1
             buf.add(obs, actions, log_probs, values, rewards, dones, dones,
-                    legal_masks, value_cats, score_targets)
+                    legal_masks, value_cats, score_targets, env_ids=torch.arange(n_learner))
 
-        # total_samples = 2+3+1+4 = 10, T*N = 4*4 = 16, so flat GAE path triggers
+        # Variable-size batches retain each environment identity for padded GAE
         next_values = torch.zeros(4)
         losses = ppo.update(buf, next_values)
 
@@ -666,7 +666,7 @@ class TestSplitMergeGAEPath:
             value_cats = torch.randint(0, 3, (n_learner,))
             score_targets = torch.rand(n_learner) * 2 - 1
             buf.add(obs, actions, log_probs, values, rewards, dones, dones,
-                    legal_masks, value_cats, score_targets)
+                    legal_masks, value_cats, score_targets, env_ids=torch.arange(n_learner))
 
         params_before = {n: p.clone() for n, p in ppo.model.named_parameters()}
         ppo.update(buf, torch.zeros(4))
@@ -695,6 +695,7 @@ class TestBufferVariableSizeFlatten:
                 torch.ones(n, 11259, dtype=torch.bool),
                 torch.full((n,), -1, dtype=torch.long),
                 torch.rand(n) * 2 - 1,
+                env_ids=torch.arange(n),
             )
 
         data = buf.flatten()
@@ -719,6 +720,7 @@ class TestBufferVariableSizeFlatten:
                 torch.ones(1, 11259, dtype=torch.bool),
                 torch.full((1,), -1, dtype=torch.long),
                 torch.rand(1) * 2 - 1,
+                env_ids=torch.zeros(1, dtype=torch.long),
             )
         data = buf.flatten()
         assert data["observations"].shape == (5, 50, 9, 9)

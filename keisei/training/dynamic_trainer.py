@@ -2,18 +2,22 @@
 
 from __future__ import annotations
 
+import fcntl
 import logging
 import threading
 import time
 from collections import deque
+from copy import deepcopy
 from dataclasses import dataclass
-
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import torch
-import torch.nn.functional as F
 
-from keisei.training.katago_ppo import ppo_clip_loss, wdl_cross_entropy_loss
+from keisei.training.katago_ppo import ppo_clip_loss
+from keisei.training.opponent_store import EntryStatus, Role
+from keisei.training.policy import masked_categorical
+from keisei.training.value_adapter import wdl_cross_entropy_loss
 
 if TYPE_CHECKING:
     from keisei.config import DynamicConfig
@@ -36,17 +40,17 @@ class MatchRollout:
     dones: torch.Tensor  # (steps, num_envs)
     legal_masks: torch.Tensor  # (steps, num_envs, action_space)
     perspective: torch.Tensor  # (steps, num_envs) — 0=player_A, 1=player_B
+    terminated: torch.Tensor | None = None
+    log_probs: torch.Tensor | None = None
+    checkpoint_versions: tuple[str | None, str | None] = (None, None)
 
 
 class DynamicTrainer:
     """Small PPO updates for Dynamic entries from league match data.
 
-    Threading: record_match(), should_update(), is_rate_limited(), and
-    update() are called from the tournament thread within
-    _run_concurrent_round/_run_one_match.  An ``_update_lock`` serialises
-    update() calls so that the training loop (which loads models from the
-    same OpponentStore on cuda:1) cannot observe a half-updated model if
-    future callers invoke update() from other threads.
+    Matches hold immutable inference snapshots. Updates serialize within a
+    trainer and across worker processes; complete weights and optimizer state
+    publish atomically, and stale snapshot data is discarded before training.
     """
 
     def __init__(
@@ -60,7 +64,6 @@ class DynamicTrainer:
         self.learner_lr = learner_lr
 
         self._match_counts: dict[int, int] = {}
-        self._total_matches: dict[int, int] = {}
         self._update_timestamps: list[float] = []
         self._optimizers: dict[int, torch.optim.Adam] = {}
         self._disabled_entries: set[int] = set()
@@ -69,7 +72,9 @@ class DynamicTrainer:
         # Global inference-only fallback (§10.4)
         self._globally_disabled: bool = False
         self._global_error_timestamps: list[float] = []
-        self._update_lock = threading.Lock()
+        self._update_lock = threading.RLock()
+        self._prepared_log_probs: torch.Tensor | None = None
+        self._optimizer_versions: dict[int, str] = {}
 
     # ------------------------------------------------------------------
     # Record & query
@@ -164,26 +169,49 @@ class DynamicTrainer:
         self, entry_id: int, device: str
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Concatenate and filter rollouts by perspective, return flat tensors."""
-        buffers = self._rollout_buffers.get(entry_id, [])
+        buffers: deque[tuple[MatchRollout, int]] | list[tuple[MatchRollout, int]] = self._rollout_buffers.get(entry_id, [])
         all_obs = []
         all_actions = []
         all_rewards = []
         all_dones = []
         all_legal_masks = []
 
+        all_log_probs = []
         for rollout, side in buffers:
-            # perspective is (steps, num_envs); boolean mask selects this side's
-            # time-steps, flattening (steps, num_envs, ...) → (N, ...).
             assert rollout.perspective.shape == rollout.actions.shape, (
                 f"perspective shape {rollout.perspective.shape} must match "
                 f"actions shape {rollout.actions.shape}"
             )
-            mask = rollout.perspective == side
+            # Derive the result before filtering by side: the winner's final
+            # move is often the only row carrying the engine's terminal reward.
+            # Each finished game's entire trajectory receives its mover's result.
+            targets = torch.zeros_like(rollout.rewards)
+            valid = torch.zeros_like(rollout.dones, dtype=torch.bool)
+            terminated = rollout.terminated if rollout.terminated is not None else rollout.dones
+            for env in range(rollout.actions.shape[1]):
+                start = 0
+                for end in rollout.dones[:, env].bool().nonzero(as_tuple=True)[0].tolist():
+                    if terminated[end, env]:
+                        mover = rollout.perspective[end, env]
+                        outcome = rollout.rewards[end, env]
+                        same_side = rollout.perspective[start:end + 1, env] == mover
+                        targets[start:end + 1, env] = torch.where(same_side, outcome, -outcome)
+                        valid[start:end + 1, env] = True
+                    start = end + 1
+            # Ignore truncated and unfinished episodes; neither supplies W/D/L.
+            mask = (rollout.perspective == side) & valid
             all_obs.append(rollout.observations[mask])
             all_actions.append(rollout.actions[mask])
-            all_rewards.append(rollout.rewards[mask])
-            all_dones.append(rollout.dones[mask])
+            all_rewards.append(targets[mask])
+            all_dones.append(valid[mask])
             all_legal_masks.append(rollout.legal_masks[mask])
+            if rollout.log_probs is not None:
+                all_log_probs.append(rollout.log_probs[mask])
+
+        self._prepared_log_probs = (
+            torch.cat(all_log_probs).to(device)
+            if all_log_probs and len(all_log_probs) == len(all_obs) else None
+        )
 
         if not all_obs:
             # Shape (0,) is sufficient: the only caller checks shape[0] == 0
@@ -212,7 +240,7 @@ class DynamicTrainer:
             )
             # Try to load state from the cached optimizer
             try:
-                new_opt.load_state_dict(opt.state_dict())
+                new_opt.load_state_dict(deepcopy(opt.state_dict()))
                 # Move optimizer state to training device
                 device = next(model.parameters()).device
                 for state in new_opt.state.values():
@@ -254,7 +282,15 @@ class DynamicTrainer:
         model weights are never half-updated when observed from another thread.
         """
         with self._update_lock:
-            return self._update_guarded(entry, device)
+            # Every sidecar owns its own trainer/store. A filesystem lock spans
+            # the complete read/train/publish operation across worker processes.
+            lock_path = Path(entry.checkpoint_path).with_suffix(".training.lock")
+            with lock_path.open("a") as lock_file:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+                try:
+                    return self._update_guarded(entry, device)
+                finally:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
     def _update_guarded(self, entry: OpponentEntry, device: str) -> bool:
         """Inner update with error handling — called under ``_update_lock``."""
@@ -287,10 +323,28 @@ class DynamicTrainer:
 
     def _update_inner(self, entry: OpponentEntry, device: str) -> bool:
         """Internal update logic — may raise."""
-        # load_opponent() returns model in eval mode.  Compute old_log_probs
-        # in eval mode first (matching the eval-mode rollout in match_utils),
-        # then switch to train mode for the gradient updates.
-        model = self.store.load_opponent(entry, device)
+        if (not self.config.training_enabled or self._globally_disabled
+                or entry.id in self._disabled_entries):
+            return False
+        current = self.store.get_entry(entry.id)
+        if (current is None or current.role != Role.DYNAMIC
+                or not current.training_enabled or current.status != EntryStatus.ACTIVE):
+            self._match_counts[entry.id] = 0
+            self._rollout_buffers.pop(entry.id, None)
+            return False
+        model = self.store.load_opponent(current, device)
+        revision = self.store.checkpoint_version(entry)
+        # Other workers may have updated this entry while a match was running.
+        # Never relabel an old behavior policy as the latest checkpoint.
+        buffers = self._rollout_buffers.get(entry.id, deque())
+        fresh = [(r, side) for r, side in buffers
+                 if r.checkpoint_versions[side] in (None, revision)]
+        self._rollout_buffers[entry.id] = deque(fresh, maxlen=self.config.max_buffer_depth)
+        self._match_counts[entry.id] = len(fresh)
+        if len(fresh) < self.config.update_every_matches:
+            return False
+        if self._optimizer_versions.get(entry.id, revision) != revision:
+            self._optimizers.pop(entry.id, None)
 
         # Concatenate and filter rollouts by perspective
         all_obs, all_actions, all_rewards, all_dones, all_legal_masks = (
@@ -298,63 +352,45 @@ class DynamicTrainer:
         )
 
         if all_obs.shape[0] == 0:
-            return False  # no relevant data
+            self._match_counts[entry.id] = 0
+            self._rollout_buffers[entry.id].clear()
+            return False  # no completed, relevant games
 
-        # Create WDL targets from terminal rewards.
-        # all_dones includes both termination and truncation (from
-        # ConcurrentMatchPool).  Truncated games at max_ply have reward 0,
-        # so they are labeled as draws — correct because no winner was
-        # determined.  The advantage calculation also handles this: reward 0 ×
-        # done 1.0 = zero advantage, so no policy gradient signal for
-        # truncated games.
-        value_cats = torch.full(
-            (all_obs.shape[0],), -1, dtype=torch.long, device=device
-        )
-        # Exact float comparison is safe: Rust VecEnv compute_reward() returns
-        # literal 1.0 / -1.0 / 0.0 with no arithmetic — no epsilon needed.
-        terminal_mask = all_dones.bool()
-        value_cats[terminal_mask & (all_rewards > 0)] = 0  # win
-        value_cats[terminal_mask & (all_rewards == 0)] = 1  # draw
-        value_cats[terminal_mask & (all_rewards < 0)] = 2  # loss
+        for name, tensor in (("observations", all_obs), ("outcomes", all_rewards)):
+            if not torch.isfinite(tensor).all():
+                raise ValueError(f"Dynamic training {name} must be finite")
+        value_cats = torch.ones(all_obs.shape[0], dtype=torch.long, device=device)
+        value_cats[all_rewards > 0] = 0
+        value_cats[all_rewards < 0] = 2
 
-        # Initial forward pass for old_log_probs (baseline) in eval mode.
-        # This matches the eval-mode inference used during rollout (match_utils
-        # line 126-127), so BatchNorm uses running stats — not batch stats —
-        # giving consistent importance ratios in the PPO update.
-        with torch.no_grad():
-            output = model(all_obs)
-            flat_logits = output.policy_logits.reshape(all_obs.shape[0], -1)
-            masked = flat_logits.masked_fill(~all_legal_masks, float("-inf"))
-            old_log_probs = (
-                F.log_softmax(masked, dim=-1)
-                .gather(1, all_actions.unsqueeze(1))
-                .squeeze(1)
-            )
+        # Evaluation mode preserves the behavior policy's normalization and
+        # dropout semantics, while gradients remain enabled during optimization.
+        model.eval()
+        old_log_probs = self._prepared_log_probs
+        if old_log_probs is None:
+            with torch.no_grad():
+                output = model(all_obs)
+                flat_logits = output.policy_logits.reshape(all_obs.shape[0], -1)
+                old_log_probs = masked_categorical(flat_logits, all_legal_masks).log_prob(all_actions)
+        if not torch.isfinite(old_log_probs).all():
+            raise ValueError("Dynamic behavior log probabilities must be finite")
 
-        model.train()
-
-        # Get or create optimizer.  On failure, optimizer is NOT stored back
-        # into self._optimizers (that happens at line 305 on success only).
-        # This is intentional: failed updates discard momentum from potentially
-        # corrupted gradients, and the old cached state is preserved for retry.
+        # Train against a copied optimizer state; a failed multi-epoch update
+        # must preserve the momentum associated with committed weights.
         optimizer = self._get_or_create_optimizer(entry.id, model)
 
         for _ in range(self.config.update_epochs_per_batch):
             indices = torch.randperm(all_obs.shape[0], device=device)
             output = model(all_obs[indices])
             flat_logits = output.policy_logits.reshape(len(indices), -1)
-            masked = flat_logits.masked_fill(
-                ~all_legal_masks[indices], float("-inf")
-            )
-            new_log_probs = (
-                F.log_softmax(masked, dim=-1)
-                .gather(1, all_actions[indices].unsqueeze(1))
-                .squeeze(1)
-            )
+            new_log_probs = masked_categorical(
+                flat_logits, all_legal_masks[indices],
+            ).log_prob(all_actions[indices])
+            if not torch.isfinite(output.value_logits).all():
+                raise RuntimeError("Dynamic value logits must be finite")
 
-            # Reward-signed advantage: +1 for wins, -1 for losses, 0 for draws/non-terminal.
-            # Zero advantage for draws is intentional — draws don't indicate which move
-            # was good or bad. The value head still learns from draws via WDL cross-entropy above.
+            # Completed-game outcome supplies a signed return for every move.
+            # Draws supervise W/D/L but have no signed policy preference.
             advantages = all_rewards[indices] * all_dones[indices].float()
 
             policy_loss = ppo_clip_loss(
@@ -372,47 +408,43 @@ class DynamicTrainer:
             # long-lived Dynamic entries.
             loss = policy_loss + value_loss
 
+            if not torch.isfinite(loss):
+                raise RuntimeError("Dynamic training loss must be finite")
             optimizer.zero_grad()
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), self.config.grad_clip)
+            torch.nn.utils.clip_grad_norm_(
+                model.parameters(), self.config.grad_clip, error_if_nonfinite=True,
+            )
             optimizer.step()
+            if any(not torch.isfinite(p).all() for p in model.parameters()):
+                raise RuntimeError("Dynamic updated weights must be finite")
 
-        # Save model weights atomically via the store's transaction-safe method.
-        self.store.save_weights(entry.id, model.state_dict())
-
-        # --- Post-checkpoint bookkeeping ---
-        # Weights are committed to disk. Failures below are bookkeeping errors,
-        # NOT training failures. They must not increment the error counter or
-        # disable the entry, because the model weights were already saved.
-        try:
-            # Move optimizer state to CPU for storage
-            for state in optimizer.state.values():
-                for k, v in state.items():
-                    if isinstance(v, torch.Tensor):
-                        state[k] = v.cpu()
-
-            match_count = self._match_counts.get(entry.id, 0)
-            self._total_matches[entry.id] = (
-                self._total_matches.get(entry.id, 0) + match_count
-            )
-
-            if self._total_matches[entry.id] >= self.config.checkpoint_flush_every:
-                self.store.save_optimizer(entry.id, optimizer.state_dict())
-                self._total_matches[entry.id] %= self.config.checkpoint_flush_every
-
+        # Another worker must receive the optimizer that produced these
+        # weights. Publish both files and the update counter in one rollback-
+        # safe transaction while retaining the cross-process writer lock.
+        for state in optimizer.state.values():
+            for key, value in state.items():
+                if isinstance(value, torch.Tensor):
+                    if not torch.isfinite(value).all():
+                        raise RuntimeError("Dynamic optimizer state must be finite")
+                    state[key] = value.cpu()
+        with self.store.transaction():
+            # The conditional UPDATE reserves SQLite's writer lock and checks
+            # lifecycle flags atomically. Retirement cannot slip between this
+            # decision and publication in another process.
+            if not self.store.reserve_dynamic_update(entry.id):
+                self._match_counts[entry.id] = 0
+                self._rollout_buffers.pop(entry.id, None)
+                return False
+            self.store.save_weights(entry.id, model.state_dict())
+            self.store.save_optimizer(entry.id, optimizer.state_dict())
             self.store.increment_update_count(entry.id)
-        except Exception:
-            logger.warning(
-                "Post-checkpoint bookkeeping failed for entry %d "
-                "(weights were saved successfully)",
-                entry.id,
-                exc_info=True,
-            )
 
         self._match_counts[entry.id] = 0
         self._rollout_buffers[entry.id] = deque(maxlen=self.config.max_buffer_depth)
         self._update_timestamps.append(time.monotonic())
         self._error_counts[entry.id] = 0
         self._optimizers[entry.id] = optimizer
+        self._optimizer_versions[entry.id] = self.store.checkpoint_version(entry)
 
         return True

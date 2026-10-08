@@ -223,7 +223,7 @@ fn piece_attacks_square(pos: &Position, from: Square, piece: Piece, target: Squa
 /// - `Some(GameResult::Repetition)` if the position has been repeated 4 times
 ///   and neither side was continuously giving check.
 /// - `Some(GameResult::PerpetualCheck { winner })` if one side was always
-///   giving check at matching plies.
+///   giving check on every move throughout the repetition interval.
 /// - `None` if the repetition count is below 4.
 pub fn check_sennichite(game: &GameState) -> Option<GameResult> {
     let current_hash = game.position.hash;
@@ -233,41 +233,42 @@ pub fn check_sennichite(game: &GameState) -> Option<GameResult> {
         return None;
     }
 
-    // Fourfold repetition detected. Walk through hash_history to find matching plies.
-    // Also consider the current position (not yet in history).
-    let mut matching_plies: Vec<usize> = Vec::new();
-    for (ply, &h) in game.hash_history.iter().enumerate() {
-        if h == current_hash {
-            matching_plies.push(ply);
-        }
-    }
-    // The current position (ply = hash_history.len()) is also a match.
-    // check_history doesn't cover the current ply yet, so we compute it.
-
-    // Check if all matching plies had the side-to-move in check.
-    // At each matching ply, check_history[ply] tells us if the side-to-move was in check.
-    // If the side-to-move was in check, it means the OPPONENT was giving check.
-    if matching_plies.is_empty() {
-        // Only the current position has this hash repeated — shouldn't reach count >= 4
-        // with no history matches, but be defensive.
+    // The current position is the fourth occurrence; the third-most-recent
+    // matching history entry starts its repetition interval.
+    let Some((start_ply, _)) = game
+        .hash_history
+        .iter()
+        .enumerate()
+        .rev()
+        .filter(|(_, hash)| **hash == current_hash)
+        .nth(2)
+    else {
         return Some(GameResult::Repetition);
-    }
+    };
+    let current_ply = game.hash_history.len();
 
-    let all_checks = matching_plies.iter().all(|&ply| {
-        ply < game.check_history.len() && game.check_history[ply]
-    });
-
-    if all_checks {
-        // Determine who was giving check: at matching plies, the side-to-move was
-        // in check, meaning the opponent of the side-to-move was giving check.
-        // Since positions with the same hash have the same side-to-move, the
-        // checker is consistent across all matching plies.
-        //
-        // The current position has the same side-to-move. The opponent of the
-        // current side-to-move was the one perpetually checking.
-        let checking_side = game.position.current_player.opponent();
-        let winner = checking_side.opponent(); // the victim wins
-        return Some(GameResult::PerpetualCheck { winner });
+    // Inspect the position AFTER every move in the interval, for either
+    // possible victim. Checking only matching hashes misses interruptions and
+    // also misses perpetual checks when the repeated side-to-move is the checker.
+    // check_history records pre-move positions, so include the current position
+    // separately and exclude the first occurrence's incoming move.
+    for victim in [Color::Black, Color::White] {
+        let all_checks = (start_ply + 1..=current_ply).all(|ply| {
+            let player = if (current_ply - ply).is_multiple_of(2) {
+                game.position.current_player
+            } else {
+                game.position.current_player.opponent()
+            };
+            player != victim
+                || if ply == current_ply {
+                    game.is_in_check()
+                } else {
+                    game.check_history[ply]
+                }
+        });
+        if all_checks {
+            return Some(GameResult::PerpetualCheck { winner: victim });
+        }
     }
 
     Some(GameResult::Repetition)
@@ -488,6 +489,89 @@ mod tests {
             check_sennichite(&gs),
             None,
             "New game should not trigger sennichite"
+        );
+    }
+
+    fn result_after_rook_repetition(
+        sfen: &str,
+        cycle: [[u8; 4]; 4],
+        mirror: bool,
+        max_ply: u32,
+    ) -> GameResult {
+        let mut game = GameState::from_sfen(sfen, max_ply).unwrap();
+        for ply in 0..12 {
+            let [from_row, from_col, to_row, to_col] = cycle[ply % 4];
+            let square = |row, col| {
+                if mirror {
+                    Square::from_row_col(8 - row, 8 - col).unwrap()
+                } else {
+                    Square::from_row_col(row, col).unwrap()
+                }
+            };
+            let mv = crate::types::Move::Board {
+                from: square(from_row, from_col),
+                to: square(to_row, to_col),
+                promote: false,
+            };
+            assert!(game.legal_moves().contains(&mv));
+            game.make_move(mv);
+            game.check_termination();
+            if ply < 11 {
+                assert_eq!(game.result, GameResult::InProgress);
+            }
+        }
+        game.result
+    }
+
+    #[test]
+    fn test_intermittent_checks_are_a_repetition_draw() {
+        // The repeated position is in check, but every other rook move is not
+        // a check. Matching-position checks alone do not establish perpetuity.
+        let cycle = [[0, 4, 0, 5], [2, 4, 2, 3], [0, 5, 0, 4], [2, 3, 2, 4]];
+        for (sfen, mirror) in [
+            ("4k4/9/4R4/9/9/9/9/9/4K4 w - 1", false),
+            ("4k4/9/9/9/9/9/4r4/9/4K4 b - 1", true),
+        ] {
+            assert_eq!(
+                result_after_rook_repetition(sfen, cycle, mirror, 500),
+                GameResult::Repetition,
+            );
+        }
+    }
+
+    #[test]
+    fn test_perpetual_check_when_checker_is_to_move_at_repetition() {
+        // Every rook move checks, although the repeated position has the
+        // checking side to move and that side's own king is never in check.
+        let cycle = [[2, 4, 2, 5], [0, 5, 0, 4], [2, 5, 2, 4], [0, 4, 0, 5]];
+        for (sfen, mirror, winner) in [
+            ("5k3/9/4R4/9/9/9/9/9/4K4 b - 1", false, Color::White),
+            ("4k4/9/9/9/9/9/4r4/9/3K5 w - 1", true, Color::Black),
+        ] {
+            assert_eq!(
+                result_after_rook_repetition(sfen, cycle, mirror, 500),
+                GameResult::PerpetualCheck { winner },
+            );
+        }
+    }
+
+    #[test]
+    fn test_repetition_on_max_ply_remains_terminal() {
+        let intermittent = [[0, 4, 0, 5], [2, 4, 2, 3], [0, 5, 0, 4], [2, 3, 2, 4]];
+        assert_eq!(
+            result_after_rook_repetition("4k4/9/4R4/9/9/9/9/9/4K4 w - 1", intermittent, false, 12),
+            GameResult::Repetition,
+        );
+    }
+
+    #[test]
+    fn test_perpetual_check_on_max_ply_remains_terminal() {
+        let continuous = [[2, 4, 2, 5], [0, 5, 0, 4], [2, 5, 2, 4], [0, 4, 0, 5]];
+        assert_eq!(
+            result_after_rook_repetition("5k3/9/4R4/9/9/9/9/9/4K4 b - 1", continuous, false, 12),
+            GameResult::PerpetualCheck {
+                winner: Color::White
+            },
         );
     }
 

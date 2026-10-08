@@ -48,7 +48,6 @@ def test_dynamic_config_training_defaults():
     assert dc.grad_clip == 1.0
     assert dc.update_every_matches == 4
     assert dc.max_updates_per_minute == 20
-    assert dc.checkpoint_flush_every == 8
     assert dc.disable_on_error is True
     assert dc.max_buffer_depth == 8
     assert dc.max_consecutive_errors == 3
@@ -78,6 +77,11 @@ def test_dynamic_config_validation():
 
 
 # --- FrontierStaticConfig tests ---
+
+
+def test_dynamic_update_threshold_fits_retained_buffer():
+    with pytest.raises(ValueError, match="update_every_matches.*max_buffer_depth"):
+        DynamicConfig(update_every_matches=5, max_buffer_depth=4)
 
 
 def test_frontier_config_promotion_defaults():

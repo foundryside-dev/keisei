@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import time
 from pathlib import Path
 from unittest.mock import patch
@@ -14,8 +13,8 @@ from keisei.config import DynamicConfig
 from keisei.db import init_db
 from keisei.training.dynamic_trainer import DynamicTrainer, MatchRollout
 from keisei.training.opponent_store import OpponentStore, Role
-
-from tests._helpers import TinyModel, make_rollout as _make_rollout
+from tests._helpers import TinyModel
+from tests._helpers import make_rollout as _make_rollout
 
 pytestmark = pytest.mark.integration
 
@@ -270,7 +269,7 @@ class TestUpdateUsesLrScale:
 
 
 class TestUpdateCallsModelTrain:
-    """test_update_calls_model_train — verify model switches to train mode."""
+    """Gradient updates preserve the evaluation-mode behavior policy."""
 
     def test_update_calls_model_train(self, store_and_entry, default_config) -> None:
         store, entry = store_and_entry
@@ -293,15 +292,9 @@ class TestUpdateCallsModelTrain:
             trainer.update(entry, "cpu")
 
         assert len(call_log) > 0, "model.train() was never called"
-        # load_opponent calls model.eval() (train(False)) first, then
-        # _update_inner calls model.train() (train(True)) for training.
-        # Verify train(True) was called and is the last mode set before training.
-        assert True in call_log, "model.train(True) was never called"
-        last_true_idx = max(i for i, m in enumerate(call_log) if m is True)
-        modes_after_train = call_log[last_true_idx + 1:]
-        assert all(m is True for m in modes_after_train), (
-            f"model switched to eval mode after train(True): {call_log}"
-        )
+        # Gradient forwards retain evaluation-mode BN/dropout behavior.
+        assert all(mode is False for mode in call_log)
+
 
 
 class TestUpdateSavesWeightsAfterUpdate:
@@ -327,15 +320,13 @@ class TestUpdateSavesWeightsAfterUpdate:
         assert bytes_before != bytes_after
 
 
-class TestUpdateSavesOptimizerAtFlushInterval:
-    """test_update_saves_optimizer_at_flush_interval."""
+class TestUpdateSavesMatchingOptimizer:
+    """Every weight publication includes matching optimizer momentum."""
 
-    def test_saves_at_flush_interval(self, store_and_entry) -> None:
+    def test_saves_after_every_update(self, store_and_entry) -> None:
         store, entry = store_and_entry
-        # checkpoint_flush_every=2 so optimizer is saved on 2nd batch of matches
         config = DynamicConfig(
             update_every_matches=1,
-            checkpoint_flush_every=2,
         )
         trainer = DynamicTrainer(store=store, config=config, learner_lr=1e-3)
 
@@ -343,7 +334,6 @@ class TestUpdateSavesOptimizerAtFlushInterval:
             "keisei.training.opponent_store.build_model",
             return_value=TinyModel(),
         ):
-            # First update: total_matches becomes 1, not divisible by 2
             trainer.record_match(entry.id, _make_rollout(side=0), 0)
             trainer.update(entry, "cpu")
             # Confirm the update actually ran (update_count incremented)
@@ -351,10 +341,11 @@ class TestUpdateSavesOptimizerAtFlushInterval:
             assert refreshed is not None and refreshed.update_count == 1, (
                 "Update should have run (update_count == 1)"
             )
-            # Optimizer not yet saved because flush interval hasn't triggered
-            assert store.load_optimizer(entry.id) is None
+            # Every published weight update includes matching optimizer state,
+            # so another sidecar can continue with the correct Adam momentum.
+            assert store.load_optimizer(entry.id) is not None
 
-            # Second update: total_matches becomes 2, divisible by 2 -> save
+            # A subsequent update must publish its optimizer too.
             # Need to re-fetch entry to get updated state
             entry2 = store.get_entry(entry.id)
             trainer.record_match(entry.id, _make_rollout(side=0), 0)
@@ -399,7 +390,7 @@ class TestRecordMatchCapsBuffer:
 
     def test_caps_buffer(self, store_and_entry) -> None:
         store, entry = store_and_entry
-        config = DynamicConfig(max_buffer_depth=3)
+        config = DynamicConfig(max_buffer_depth=3, update_every_matches=3)
         trainer = DynamicTrainer(store=store, config=config, learner_lr=1e-3)
 
         for _ in range(5):
@@ -468,10 +459,8 @@ class TestUpdateUsesRewardSignedAdvantages:
         assert (advs < 0).any(), (
             f"Expected at least one negative advantage for loss, got {advs}"
         )
-        # Non-terminal steps should have zero advantage (reward=0 * done=0)
-        assert (advs == 0).any(), (
-            f"Expected some zero advantages for non-terminal steps, got {advs}"
-        )
+        # Every move in the completed losing game receives the loss outcome.
+        assert (advs < 0).all(), f"Expected the complete losing trajectory, got {advs}"
 
 
 # ---------------------------------------------------------------------------
@@ -625,14 +614,13 @@ class TestUpdateEmptyBatchReturnsFalse:
 
 
 class TestPostCheckpointFailureStillReturnsTrue:
-    """Post-checkpoint bookkeeping failures must not count as training failures."""
+    """A failed optimizer publication rolls back the whole update."""
 
-    def test_save_optimizer_failure_returns_true(self, store_and_entry) -> None:
-        """If save_optimizer raises after weights are committed, update() still returns True."""
+    def test_save_optimizer_failure_rolls_back(self, store_and_entry) -> None:
+        """Weights cannot commit without the optimizer state that produced them."""
         store, entry = store_and_entry
         config = DynamicConfig(
             update_every_matches=1,
-            checkpoint_flush_every=1,  # force optimizer save on every update
             max_consecutive_errors=1,  # would disable on first real error
             disable_on_error=True,
         )
@@ -647,12 +635,11 @@ class TestPostCheckpointFailureStillReturnsTrue:
         ):
             result = trainer.update(entry, "cpu")
 
-        # Should succeed — weights were saved, only bookkeeping failed
-        assert result is True
-        # Should NOT be disabled
-        assert entry.id not in trainer._disabled_entries
-        # Error count should be reset (successful training)
-        assert trainer._error_counts.get(entry.id, 0) == 0
+        assert result is False
+        assert entry.id in trainer._disabled_entries
+        assert trainer._error_counts.get(entry.id, 0) == 1
+        assert store.get_entry(entry.id).update_count == 0
+
 
 
 class TestOldLogProbsComputedInEvalMode:
@@ -660,7 +647,7 @@ class TestOldLogProbsComputedInEvalMode:
 
     def test_old_log_probs_use_eval_mode(self, store_and_entry) -> None:
         """Verify model is in eval mode during old_log_probs forward pass,
-        then switches to train mode for the gradient update loop."""
+        and remains in eval mode for the gradient update loop."""
         store, entry = store_and_entry
         config = DynamicConfig(update_every_matches=1, update_epochs_per_batch=1)
         trainer = DynamicTrainer(store=store, config=config, learner_lr=1e-3)
@@ -681,15 +668,15 @@ class TestOldLogProbsComputedInEvalMode:
             trainer.update(entry, "cpu")
 
         # First forward call = old_log_probs (should be eval mode = False)
-        # Subsequent calls = training updates (should be train mode = True)
+        # Subsequent calls retain the same eval-mode normalization.
         assert len(forward_training_states) >= 2, (
             f"Expected at least 2 forward calls, got {len(forward_training_states)}"
         )
         assert forward_training_states[0] is False, (
             "old_log_probs forward pass should be in eval mode (model.training=False)"
         )
-        assert all(s is True for s in forward_training_states[1:]), (
-            f"Training forward passes should be in train mode, got {forward_training_states[1:]}"
+        assert all(s is False for s in forward_training_states[1:]), (
+            f"Gradient forward passes must preserve eval behavior, got {forward_training_states[1:]}"
         )
 
 

@@ -122,7 +122,6 @@ class DynamicConfig:
     grad_clip: float = 1.0               # gradient clipping norm
     update_every_matches: int = 4         # accumulate N matches before one update
     max_updates_per_minute: int = 20      # hard cap on update rate
-    checkpoint_flush_every: int = 8       # save weights+optimizer every N matches
     disable_on_error: bool = True         # fall back to inference-only on training error
 ```
 
@@ -154,15 +153,14 @@ These match classes do NOT produce training data:
    - Learning rate = `learner_lr * lr_scale`
    - Gradient clipping at `grad_clip`
    - Standard PPO clipped objective (same loss function as learner, minus the score head — Dynamic entries don't need score prediction)
-5. Updated weights are written back to the entry's checkpoint file.
-6. Optimizer state is saved every `checkpoint_flush_every` matches.
-7. `update_count` and `last_train_at` are updated in the DB.
+5. Updated weights and matching optimizer state are published together under an entry lock.
+6. `update_count` and `last_train_at` are updated in the same transaction; a failed publication restores the previous files.
 
 **Safety rails:**
 
 - **Rate limiting:** No more than `max_updates_per_minute` updates across all Dynamic entries combined. `is_rate_limited()` tracks a sliding window.
 - **Error fallback:** If a training update raises an exception (NaN loss, CUDA error, etc.) and `disable_on_error=True`, the DynamicTrainer logs the error and disables training for that entry. The entry remains in the pool as a frozen inference-only opponent. A transition is logged: `"training disabled due to error: {error}"`.
-- **Checkpoint frequency:** Optimizer state is expensive to save. Only flush every `checkpoint_flush_every` matches. Weights are always saved after an update (they're small relative to optimizer state).
+- **Checkpoint consistency:** Every published weight revision includes matching optimizer momentum so another worker can resume it correctly.
 
 **What DynamicTrainer does NOT do:**
 - It does not manage admission/eviction (that's DynamicManager).

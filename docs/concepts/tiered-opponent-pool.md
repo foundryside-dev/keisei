@@ -569,7 +569,7 @@ Only increase beyond that after measuring:
 
 - GPU memory pressure
 - DB write rates
-- checkpoint flush frequency
+- update frequency (weights and optimizer state are published together)
 - tournament latency
 - dynamic-update overhead
 
@@ -697,7 +697,7 @@ That keeps the branch semantics clear.
 Recommended defaults:
 
 - `dynamic_max_updates_per_minute = 20`
-- `dynamic_checkpoint_flush_every = 8 matches`
+- Dynamic weights and matching optimizer momentum are saved together after every update.
 - `dynamic_disable_on_error = true`
 
 ---
@@ -975,7 +975,6 @@ lr_scale = 0.25
 grad_clip = 1.0
 update_every_matches = 4
 max_updates_per_minute = 20
-checkpoint_flush_every = 8
 batch_reuse = 1
 
 [league.history]

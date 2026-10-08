@@ -23,6 +23,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   silently dropping work.
 
 ### Fixed
+- **PPO trajectory and likelihood correctness** — alternating self-play traces
+  use mover-relative signs; truncation stops traces while retaining terminal-board
+  bootstrap values. Dense and partial rollouts preserve environment identity across
+  buffer reuse. Learner colors persist until each game ends, including across
+  epochs and seat rotations. Collection and updates share float32 legal-action distributions and
+  evaluation-mode normalization, including compiled and mixed-precision forwards.
+- **Training restart state** — restore the learner before initializing the league,
+  preserve seat-relative entropy warmup and scheduler history, and retain the last
+  valid checkpoint pointer when a save fails.
+- **Dynamic opponent learning** — sidecar tournaments now train eligible entries
+  from both players' completed-game outcomes and recorded behavior probabilities.
+  Workers serialize updates, discard stale trajectories, publish matching weights
+  and optimizer state transactionally, and refresh retained opponent checkpoints.
+  Sidecar results also maintain role-specific ratings with serialized rating updates.
+- **Game adjudication** — perpetual check requires uninterrupted checking throughout
+  the repetition interval; genuine endings on the final allowed ply retain their
+  terminal reward instead of becoming time-limit draws.
+- **PPO numerical safeguards** — disabled auxiliary heads and ignored value labels
+  cannot inject NaN gradients through the shared trunk. Non-finite active losses or
+  gradients stop before an optimizer step, with unused-head support for DDP.
 - **`play_match()` overshoot when `num_envs > games_target`** — the first/final
   partial batch counted every completed lane, so e.g. `games_target=1` with
   `num_envs=4` returned 4 games. `play_batch()` now takes an `active_envs`
@@ -41,6 +61,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   button.
 
 ### Changed
+- Dynamic optimizer state is saved with every weight update; the obsolete
+  `checkpoint_flush_every` setting is removed. Dynamic update thresholds must fit
+  the retained rollout buffer. Multi-head DDP requires `find_unused_parameters = true`
+  (now the default) because a minibatch can contain no value labels.
 - **WebUI Knight legend** uses jump glyphs (⇖ / ⇗) in row 0 of a uniform 3×3
   grid instead of an extra row above the grid. Every piece's legend is now
   the same physical height, simplifying layout. `KNIGHT_EXTRA` and the

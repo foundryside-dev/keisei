@@ -52,6 +52,7 @@ def save_checkpoint(
     scheduler: Any | None = None,
     grad_scaler: Any | None = None,
     world_size: int = 1,
+    training_state: dict[str, Any] | None = None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     data: dict[str, Any] = {
@@ -76,6 +77,8 @@ def save_checkpoint(
         data["scheduler_state_dict"] = scheduler.state_dict()
     if grad_scaler is not None:
         data["grad_scaler_state_dict"] = grad_scaler.state_dict()
+    if training_state is not None:
+        data["training_state"] = dict(training_state)
     tmp_path = path.with_suffix(".pt.tmp")
     try:
         torch.save(data, tmp_path)
@@ -176,4 +179,7 @@ def load_checkpoint(
             current_world_size,
         )
 
-    return {"epoch": checkpoint["epoch"], "step": checkpoint["step"]}
+    metadata = {"epoch": checkpoint["epoch"], "step": checkpoint["step"]}
+    if not skip_optimizer and "training_state" in checkpoint:
+        metadata["training_state"] = checkpoint["training_state"]
+    return metadata

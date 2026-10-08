@@ -12,13 +12,13 @@ import torch
 
 from keisei.config import ConcurrencyConfig
 from keisei.db import _connect, init_db
-from keisei.training.concurrent_matches import MatchResult, RoundStats
-from keisei.training.opponent_store import OpponentEntry, OpponentStore
 from keisei.db.tournament_queue import (
     claim_next_pairing,
     enqueue_pairings,
     get_round_status,
 )
+from keisei.training.concurrent_matches import MatchResult, RoundStats
+from keisei.training.opponent_store import OpponentEntry, OpponentStore
 from keisei.training.tournament_runner import TournamentWorker
 
 
@@ -338,7 +338,9 @@ class TestBatchedLoop:
         assert len(rows) == 2
         first_after = rows[0]["elo_after_a"]
         second_before = rows[1]["elo_before_a"]
-        assert first_after == pytest.approx(1008.0, abs=1e-6)
+        # Result rows report contextual Dynamic Elo (default K=24), while
+        # the composite rating above retains the worker's configured K=16.
+        assert first_after == pytest.approx(1012.0, abs=1e-6)
         assert second_before == pytest.approx(first_after, abs=1e-6)
 
     def test_result_epoch_tracks_claim_enqueued_epoch(

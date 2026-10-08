@@ -4,16 +4,21 @@
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from typing import Any, Callable
 
 import torch
+import torch.distributed as dist
 import torch.nn.functional as F
 from torch.amp import GradScaler, autocast  # type: ignore[attr-defined]  # stubs lag behind PyTorch 2.x
+from torch.nn.parallel import DistributedDataParallel
 
 from keisei.sl.dataset import SCORE_NORMALIZATION
 from keisei.training.gae import compute_gae_gpu
 from keisei.training.models.katago_base import KataGoBaseModel
+from keisei.training.policy import masked_categorical
+from keisei.training.value_adapter import wdl_cross_entropy_loss as wdl_cross_entropy_loss
 
 
 def _amp_dtype_and_device(use_amp: bool, device: torch.device) -> tuple[torch.dtype, str]:
@@ -41,20 +46,6 @@ def ppo_clip_loss(
     surr1 = ratio * advantages
     surr2 = ratio.clamp(1 - clip_epsilon, 1 + clip_epsilon) * advantages
     return -torch.min(surr1, surr2).mean()
-
-
-def wdl_cross_entropy_loss(
-    value_logits: torch.Tensor,
-    value_cats: torch.Tensor,
-) -> torch.Tensor:
-    """WDL (Win/Draw/Loss) categorical cross-entropy with ignore_index=-1."""
-    has_valid = (value_cats >= 0).any()
-    if not has_valid:
-        # Return a differentiable zero connected to value_logits so autograd
-        # produces zero gradients (not None) for the value head parameters.
-        # A plain torch.tensor(0.0) would have no graph connection.
-        return value_logits.sum() * 0.0
-    return F.cross_entropy(value_logits, value_cats, ignore_index=-1)
 
 
 def compute_value_metrics(
@@ -100,6 +91,20 @@ class KataGoPPOParams:
     use_terminated_for_gae: bool = True   # R1: correctness fix, False only for emergency rollback
 
     def __post_init__(self) -> None:
+        for name in ("learning_rate", "gamma", "gae_lambda", "clip_epsilon",
+                     "lambda_policy", "lambda_value", "lambda_score", "lambda_entropy",
+                     "score_normalization", "grad_clip", "score_blend_alpha"):
+            if not math.isfinite(getattr(self, name)):
+                raise ValueError(f"{name} must be finite")
+        for name in ("lambda_policy", "lambda_value", "lambda_score", "lambda_entropy"):
+            if getattr(self, name) < 0:
+                raise ValueError(f"{name} must be >= 0")
+        if self.score_normalization <= 0:
+            raise ValueError("score_normalization must be > 0")
+        if not 0 <= self.score_blend_alpha <= 1:
+            raise ValueError("score_blend_alpha must be in [0, 1]")
+        if self.entropy_decay_epochs < 0:
+            raise ValueError("entropy_decay_epochs must be >= 0")
         if self.batch_size <= 0:
             raise ValueError(f"batch_size must be > 0, got {self.batch_size}")
         if self.epochs_per_batch <= 0:
@@ -136,6 +141,7 @@ class KataGoRolloutBuffer:
         self._step_count = 0
         self._storage: dict[str, torch.Tensor] = {}
         self._has_env_ids = False
+        self.alternating_perspective = False
         # next_value_override is a per-transition bootstrap V passed through
         # to GAE. Default-NaN cells fall back to the values[t+1] shift; finite
         # cells inject a caller-supplied bootstrap (e.g. V(terminal_observation)
@@ -189,6 +195,9 @@ class KataGoRolloutBuffer:
     def clear(self) -> None:
         self._write_offset = 0
         self._step_count = 0
+        self._has_env_ids = False
+        self._has_next_value_override = False
+        self.alternating_perspective = False
         # Keep storage allocated for reuse — just reset the write head.
         # This avoids re-allocation every epoch.
 
@@ -221,6 +230,30 @@ class KataGoRolloutBuffer:
                 where the default is wrong (e.g. V(terminal_observation) at
                 truncation, with auto-reset).
         """
+        if obs.ndim != len(self.obs_shape) + 1 or obs.shape[0] == 0:
+            raise ValueError("observations must have a nonempty batch dimension")
+        n = obs.shape[0]
+        fields = {
+            "observations": (obs, (n, *self.obs_shape)),
+            "actions": (actions, (n,)), "log_probs": (log_probs, (n,)),
+            "values": (values, (n,)), "rewards": (rewards, (n,)),
+            "dones": (dones, (n,)), "terminated": (terminated, (n,)),
+            "legal_masks": (legal_masks, (n, self.action_space)),
+            "value_categories": (value_categories, (n,)), "score_targets": (score_targets, (n,)),
+        }
+        if env_ids is not None:
+            fields["env_ids"] = (env_ids, (n,))
+        if next_value_override is not None:
+            fields["next_value_override"] = (next_value_override, (n,))
+        for name, (tensor, expected_shape) in fields.items():
+            if tuple(tensor.shape) != expected_shape:
+                raise ValueError(f"{name} has shape {tuple(tensor.shape)}, expected {expected_shape}")
+        if self._step_count and (env_ids is not None) != self._has_env_ids:
+            raise ValueError("env_ids must be supplied consistently within a rollout")
+        if env_ids is None and n != self.num_envs:
+            raise ValueError("Partial environment batches require explicit env_ids")
+        if env_ids is not None and ((env_ids < 0) | (env_ids >= self.num_envs)).any():
+            raise ValueError("env_ids must index an existing environment")
         # Detach and move to CPU first — all validation below runs on CPU
         # tensors, avoiding implicit CUDA synchronization on the hot path.
         obs_cpu = obs.detach().cpu()
@@ -274,7 +307,7 @@ class KataGoRolloutBuffer:
             self._has_env_ids = True
 
         # Track next_value_override presence on first add that supplies it
-        if self._step_count == 0 and next_value_override is not None:
+        if next_value_override is not None:
             self._has_next_value_override = True
 
         self._ensure_capacity(n)
@@ -307,7 +340,7 @@ class KataGoRolloutBuffer:
             self._storage["next_value_override"][off:off + n] = (
                 next_value_override.detach().cpu().to(torch.float32)
             )
-        elif self._has_next_value_override and "next_value_override" in self._storage:
+        elif "next_value_override" in self._storage:
             # Override schema is active but this call does not supply one.
             # Stamp NaN so downstream GAE falls back to values[t+1] for these
             # rows. Without this, stale cells from a prior epoch (after clear)
@@ -334,12 +367,14 @@ class KataGoRolloutBuffer:
         """
         if self._has_env_ids:
             return  # split-merge layout — perspective handled by pending protocol
+        self.alternating_perspective = True
         T = self._step_count
         if T <= 1:
             return  # no t+1 to read from
         N = self.num_envs
         if self._write_offset != T * N:
             return  # buffer is not in (T, N) flat layout
+        self._has_next_value_override = True
         if "next_value_override" not in self._storage:
             self._storage["next_value_override"] = torch.full(
                 (self._alloc_samples,), float("nan"),
@@ -425,41 +460,23 @@ class KataGoPPOAlgorithm:
             "compile + grad clipping requires this"
         )
 
-        # torch.compile setup — two models to avoid BN mode-switch trace baking.
-        # compiled_train: always train mode (used in update() mini-batch loop)
-        # compiled_eval: always eval mode (used in select_actions() and value metrics)
-        # Note: torch.compile() does NOT trace the graph — that happens at the
-        # first forward call. The mode set here must match the mode at first call.
+        # A policy must have identical normalization in collection and updates.
+        # Eval mode freezes BatchNorm statistics; autograd remains enabled for
+        # gradient updates, including BN affine parameters.
         _log = logging.getLogger(__name__)
-        self.compiled_train: Callable[..., Any] | None = None
-        self.compiled_eval: Callable[..., Any] | None = None
+        self.forward_model.eval()
+        self.compiled_model: Callable[..., Any] | None = None
         if self.params.compile_mode is not None:
             if self.params.compile_mode == "reduce-overhead" and self.params.compile_dynamic:
                 _log.warning(
                     "compile_mode='reduce-overhead' with compile_dynamic=True disables "
-                    "CUDA graph capture (the main benefit of reduce-overhead). "
-                    "Set compile_dynamic=False for fixed-batch-size runs."
+                    "CUDA graph capture; use compile_dynamic=False for fixed batches."
                 )
-            self.forward_model.train()
-            self.compiled_train = torch.compile(
-                self.forward_model,
-                mode=self.params.compile_mode,
+            self.compiled_model = torch.compile(
+                self.forward_model, mode=self.params.compile_mode,
                 dynamic=self.params.compile_dynamic,
             )
-            self.forward_model.eval()
-            self.compiled_eval = torch.compile(
-                self.forward_model,
-                mode=self.params.compile_mode,
-                dynamic=self.params.compile_dynamic,
-            )
-            self.forward_model.train()  # restore default
-            _log.info(
-                "torch.compile active: mode=%s, dynamic=%s",
-                self.params.compile_mode, self.params.compile_dynamic,
-            )
-        else:
-            self.compiled_train = None
-            self.compiled_eval = None
+            _log.info("torch.compile active: mode=%s", self.params.compile_mode)
 
         # CUDA event timing — records event pairs during forward passes and GAE.
         # Events are accumulated without synchronization during the hot loop.
@@ -488,7 +505,7 @@ class KataGoPPOAlgorithm:
             )
             # Freeze AMP config after compile + configure — changing _amp_*
             # attributes after torch.compile triggers silent recompilation.
-            if self.compiled_train is not None:
+            if self.compiled_model is not None:
                 model._amp_frozen = True
 
         self.optimizer = torch.optim.Adam(model.parameters(), lr=params.learning_rate)
@@ -514,6 +531,22 @@ class KataGoPPOAlgorithm:
             return self.params.lambda_entropy
         t = elapsed / decay_epochs
         return self.warmup_entropy + t * (self.params.lambda_entropy - self.warmup_entropy)
+
+    def _all_ranks_true(self, condition: torch.Tensor) -> bool:
+        valid = condition.to(dtype=torch.int32)
+        if isinstance(self.forward_model, DistributedDataParallel):
+            dist.all_reduce(valid, op=dist.ReduceOp.MIN, group=self.forward_model.process_group)
+        return bool(valid)
+
+    def _require_update_condition(self, condition: torch.Tensor, message: str) -> None:
+        """Fail all DDP ranks before backward if any rank has invalid data."""
+        if not self._all_ranks_true(condition):
+            raise RuntimeError(message)
+
+    def _require_finite(self, tensor: torch.Tensor, name: str) -> None:
+        self._require_update_condition(
+            torch.isfinite(tensor).all(), f"Non-finite {name}; optimizer step aborted",
+        )
 
     def flush_timings(self) -> None:
         """Convert accumulated CUDA event pairs to elapsed-time floats.
@@ -545,29 +578,10 @@ class KataGoPPOAlgorithm:
         self, obs: torch.Tensor, legal_masks: torch.Tensor,
         value_adapter: Any | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Select actions for rollout collection.
-
-        When compiled, uses compiled_eval (traced in eval mode) to avoid
-        mode-switch graph breaks. Falls back to eval/train toggle in eager mode.
-
-        Note: compiled_eval is always called while forward_model is in train mode.
-        This is correct because torch.compile captures the training flag at first-call
-        time and caches it — subsequent calls reuse that cached graph regardless of
-        the module's current training flag. The compiled_eval graph was first called
-        in eval mode (during warmup or first select_actions call after __init__
-        sets eval before compiling), so it always uses eval-mode BN behavior.
-        """
+        """Collect actions using the same eval-mode policy used for gradients."""
         device = next(self.model.parameters()).device
-
-        if self.compiled_eval is not None:
-            model = self.compiled_eval
-            # Force eval mode so torch.compile traces (or re-uses) eval-mode BN
-            # behavior. compile() captures training flag at first forward call,
-            # NOT at torch.compile() time.
-            self.forward_model.eval()
-        else:
-            model = self.forward_model
-            model.eval()
+        self.forward_model.eval()
+        model = self.compiled_model if self.compiled_model is not None else self.forward_model
         try:
             # Record CUDA events around forward pass only (not the legal mask guard,
             # which includes a CPU-syncing .nonzero() call — see spec hazard H8).
@@ -597,10 +611,7 @@ class KataGoPPOAlgorithm:
 
             # Flatten spatial policy to (B, 11259), apply mask
             flat_logits = output.policy_logits.reshape(obs.shape[0], -1)
-            masked_logits = flat_logits.masked_fill(~legal_masks, float("-inf"))
-
-            probs = F.softmax(masked_logits, dim=-1)
-            dist = torch.distributions.Categorical(probs, validate_args=False)
+            dist = masked_categorical(flat_logits, legal_masks)
             actions = dist.sample()
             log_probs = dist.log_prob(actions)
 
@@ -614,7 +625,7 @@ class KataGoPPOAlgorithm:
 
             return actions, log_probs, scalar_values
         finally:
-            self.forward_model.train()
+            self.forward_model.eval()
 
     def update(
         self,
@@ -625,14 +636,7 @@ class KataGoPPOAlgorithm:
     ) -> dict[str, float]:
         from keisei.training.gae import compute_gae  # noqa: PLC0415 — local import for circular-import safety
 
-        self.forward_model.train()
-        # Safety assertion: forward_model must be in train mode before compiled_train
-        # is used. split_merge_step calls learner_model.eval() during rollout and
-        # relies on update() to restore train mode. See Note N3 in the plan.
-        assert self.forward_model.training, (
-            "forward_model must be in train mode at start of update() — "
-            "compiled_train graph requires this"
-        )
+        self.forward_model.eval()
 
         # Clear update-phase timing events from previous cycle.
         # Do NOT clear select_actions_forward_ms — those accumulate during rollout
@@ -640,13 +644,30 @@ class KataGoPPOAlgorithm:
         self._timing_events["update_forward_backward_ms"].clear()
         self._timing_events["gae_ms"].clear()
 
+        device = next(self.model.parameters()).device
+        if isinstance(self.forward_model, DistributedDataParallel):
+            # Every rank must enter the same number of forwards, backwards and
+            # validation collectives. Coordinate before flatten can reject an
+            # empty rank independently, and before any minibatch enters DDP.
+            schedule = torch.tensor(
+                [buffer._write_offset, self.params.batch_size, self.params.epochs_per_batch,
+                 int(self.scaler.is_enabled())], device=device, dtype=torch.int64,
+            )
+            group = self.forward_model.process_group
+            schedules = [torch.empty_like(schedule) for _ in range(dist.get_world_size(group))]
+            dist.all_gather(schedules, schedule, group=group)
+            if any(int(other[0]) == 0 for other in schedules):
+                raise ValueError("DDP requires nonempty rollouts on every rank")
+            if any(not torch.equal(other, schedule) for other in schedules):
+                raise ValueError("DDP requires equal rollout sample counts and update schedules across ranks")
+
         data = buffer.flatten()
         T = buffer.size
         N = buffer.num_envs
         total_samples = data["rewards"].numel()
-        device = next(self.model.parameters()).device
 
         gae_dones_key = "terminated" if self.params.use_terminated_for_gae else "dones"
+        trace_sign = -1.0 if buffer.alternating_perspective else 1.0
 
         # GAE computation — runs on CPU (buffer stores data on CPU).
         # Force float32 for GAE inputs: under AMP, value estimates may be
@@ -654,7 +675,7 @@ class KataGoPPOAlgorithm:
         # significant precision in reduced formats over T≈128 steps.
         next_values_cpu = next_values.detach().float().cpu()
 
-        if total_samples == T * N:
+        if "env_ids" not in data and total_samples == T * N:
             # Vectorized path: batched GAE over (T, N) grid
             rewards_2d = data["rewards"].reshape(T, N).float()
             values_2d = data["values"].reshape(T, N).float()
@@ -681,6 +702,7 @@ class KataGoPPOAlgorithm:
                     rewards_2d.to(device), values_2d.to(device),
                     terminated_2d.to(device), next_values.detach().float(),
                     gamma=self.params.gamma, lam=self.params.gae_lambda,
+                    trace_dones=data["dones"].reshape(T, N).to(device), trace_sign=trace_sign,
                     next_value_override=(
                         override_2d.to(device) if override_2d is not None else None
                     ),
@@ -689,6 +711,7 @@ class KataGoPPOAlgorithm:
                 advantages = compute_gae(
                     rewards_2d, values_2d, terminated_2d,
                     next_values_cpu, gamma=self.params.gamma, lam=self.params.gae_lambda,
+                    trace_dones=data["dones"].reshape(T, N), trace_sign=trace_sign,
                     next_value_override=override_2d,
                 ).reshape(-1)
 
@@ -714,6 +737,7 @@ class KataGoPPOAlgorithm:
 
             rewards_pad = torch.zeros(max_T, N_env)
             values_pad = torch.zeros(max_T, N_env)
+            trace_dones_pad = torch.ones(max_T, N_env)
             terminated_pad = torch.ones(max_T, N_env)  # padding = done to zero GAE
             nv = torch.zeros(N_env)
 
@@ -735,6 +759,7 @@ class KataGoPPOAlgorithm:
                 rewards_pad[:L, i] = data["rewards"][idx]
                 values_pad[:L, i] = data["values"][idx]
                 terminated_pad[:L, i] = data[gae_dones_key][idx]
+                trace_dones_pad[:L, i] = data["dones"][idx]
                 nv[i] = next_values_cpu[unique_envs[i]]
                 if override_pad is not None:
                     override_pad[:L, i] = data["next_value_override"][idx].float()
@@ -746,6 +771,7 @@ class KataGoPPOAlgorithm:
                     rewards_pad.to(device), values_pad.to(device),
                     terminated_pad.to(device), nv.to(device),
                     lengths_t, gamma=self.params.gamma, lam=self.params.gae_lambda,
+                    trace_dones=trace_dones_pad.to(device), trace_sign=trace_sign,
                     next_value_override=(
                         override_pad.to(device) if override_pad is not None else None
                     ),
@@ -754,6 +780,7 @@ class KataGoPPOAlgorithm:
                 padded_adv = compute_gae_padded(
                     rewards_pad, values_pad, terminated_pad, nv, lengths_t,
                     gamma=self.params.gamma, lam=self.params.gae_lambda,
+                    trace_dones=trace_dones_pad, trace_sign=trace_sign,
                     next_value_override=override_pad,
                 )
 
@@ -762,15 +789,7 @@ class KataGoPPOAlgorithm:
                 L = env_lengths[i]
                 advantages[idx] = padded_adv[:L, i]
         else:
-            # Fallback: flat GAE (no env_ids — legacy split-merge behavior).
-            # Mean across all envs is a rough bootstrap approximation; the
-            # primary per-env path above is used in normal operation.
-            bootstrap = next_values_cpu.mean()
-            advantages = compute_gae(
-                data["rewards"].float(), data["values"].float(),
-                data[gae_dones_key],
-                bootstrap, gamma=self.params.gamma, lam=self.params.gae_lambda,
-            )
+            raise ValueError("Partial rollouts require env_ids for per-environment GAE")
 
         batch_size = min(self.params.batch_size, total_samples)
 
@@ -847,45 +866,34 @@ class KataGoPPOAlgorithm:
                     _fb_start.record(_fb_stream)
 
                 with autocast(device_type=autocast_device, dtype=amp_dtype, enabled=self.params.use_amp):
-                    # Use compiled_train if available; fall back to eager forward_model.
-                    # compiled_train was traced in train mode — BN updates running stats.
-                    if self.compiled_train is not None:
-                        output = self.compiled_train(batch_obs)
+                    # Freeze normalization while retaining the gradient graph.
+                    if self.compiled_model is not None:
+                        output = self.compiled_model(batch_obs)
                     else:
                         output = self.forward_model(batch_obs)
 
                     # Policy loss (clipped surrogate)
                     flat_logits = output.policy_logits.reshape(batch_obs.shape[0], -1)
 
-                    # NaN guard: check raw model output BEFORE masking.
-                    if flat_logits.isnan().any():
-                        raise RuntimeError("NaN in raw policy logits from model forward pass")
+                    # Coordinate failures before any rank enters backward.
+                    self._require_finite(flat_logits, "raw policy logits")
 
                     # Guard: no sample in the batch should have an all-False legal mask.
                     # This mirrors the guard in select_actions — an all-illegal mask
                     # would produce all-NaN from log_softmax(-inf) and silently corrupt the loss.
-                    if (batch_legal_masks.sum(dim=-1) == 0).any():
-                        raise RuntimeError(
-                            "Batch contains samples with zero legal actions in update(). "
-                            "Check that terminal-state masks are not stored in the buffer."
-                        )
+                    self._require_update_condition(
+                        batch_legal_masks.any(dim=-1).all(),
+                        "Batch contains samples with zero legal actions in update(). "
+                        "Check that terminal-state masks are not stored in the buffer.",
+                    )
 
-                    masked_logits = flat_logits.masked_fill(~batch_legal_masks, float("-inf"))
-                    log_probs_all = F.log_softmax(masked_logits, dim=-1)
-                    new_log_probs = log_probs_all.gather(
-                        1, batch_actions.unsqueeze(1)
-                    ).squeeze(1)
-
+                    distribution = masked_categorical(flat_logits, batch_legal_masks)
+                    new_log_probs = distribution.log_prob(batch_actions)
                     policy_loss = ppo_clip_loss(
                         new_log_probs, batch_old_log_probs,
                         batch_advantages, self.params.clip_epsilon,
                     )
-
-                    # Entropy over legal actions only.
-                    # Reuse log_softmax result instead of computing softmax again.
-                    probs = log_probs_all.exp()
-                    safe_log_probs = log_probs_all.masked_fill(~batch_legal_masks, 0.0)
-                    entropy = -(probs * safe_log_probs).sum(dim=-1).mean()
+                    entropy = distribution.entropy().mean()
 
                     # Value + score loss — dispatch through adapter if provided
                     if value_adapter is not None:
@@ -901,15 +909,19 @@ class KataGoPPOAlgorithm:
                         score_loss = _zero
                     else:
                         # Default: inline KataGo multi-head (backward compatible)
-                        value_loss = wdl_cross_entropy_loss(
-                            output.value_logits, batch_value_cats,
-                        )
+                        value_loss = _zero
+                        if self.params.lambda_value:
+                            value_loss = wdl_cross_entropy_loss(
+                                output.value_logits, batch_value_cats,
+                            )
 
                         # Score loss (MSE on normalized material balance).
                         # Every position has a real target — no NaN masking needed.
-                        score_loss = F.mse_loss(
-                            output.score_lead.squeeze(-1), batch_score_targets,
-                        )
+                        score_loss = _zero
+                        if self.params.lambda_score:
+                            score_loss = F.mse_loss(
+                                output.score_lead.float().squeeze(-1), batch_score_targets,
+                            )
 
                         value_score_loss = (
                             self.params.lambda_value * value_loss
@@ -923,12 +935,27 @@ class KataGoPPOAlgorithm:
                         - self.current_entropy_coeff * entropy
                     )
 
+                self._require_finite(loss, "PPO loss")
                 self.optimizer.zero_grad(set_to_none=True)
                 self.scaler.scale(loss).backward()
                 self.scaler.unscale_(self.optimizer)
                 grad_norm = torch.nn.utils.clip_grad_norm_(
-                    self.model.parameters(), self.params.grad_clip
+                    self.model.parameters(), self.params.grad_clip, error_if_nonfinite=False,
                 )
+                if not self._all_ranks_true(torch.isfinite(grad_norm)):
+                    if not self.scaler.is_enabled():
+                        raise RuntimeError("Non-finite PPO gradients; optimizer step aborted")
+                    # A finite forward loss can overflow scaled FP16 backward.
+                    # Skip on every rank and lower the scale together; do not
+                    # let a rank with finite local gradients step independently.
+                    self.optimizer.zero_grad(set_to_none=True)
+                    scaler_state = self.scaler.state_dict()
+                    scaler_state["_growth_tracker"] = 0
+                    self.scaler.load_state_dict(scaler_state)
+                    self.scaler.update(
+                        new_scale=self.scaler.get_scale() * self.scaler.get_backoff_factor(),
+                    )
+                    continue
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
 
@@ -985,7 +1012,5 @@ class KataGoPPOAlgorithm:
                 )
                 metrics.update(value_metrics)
 
-        # Always restore train mode — even when compiled. split_merge_step
-        # relies on this (see Note N3). No-op if already in train mode.
-        self.forward_model.train()
+        self.forward_model.eval()
         return metrics

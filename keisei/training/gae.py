@@ -5,6 +5,21 @@ from __future__ import annotations
 import torch
 
 
+def _validate_shapes(
+    rewards: torch.Tensor, values: torch.Tensor, terminated: torch.Tensor,
+    next_value: torch.Tensor, override: torch.Tensor | None, trace_dones: torch.Tensor,
+) -> None:
+    if rewards.ndim not in (1, 2):
+        raise ValueError("GAE expects (T,) or (T, N) rewards")
+    for name, tensor in (("values", values), ("terminated", terminated),
+                         ("next_value_override", override), ("trace_dones", trace_dones)):
+        if tensor is not None and tensor.shape != rewards.shape:
+            raise ValueError(f"{name} shape {tuple(tensor.shape)} must match rewards {tuple(rewards.shape)}")
+    expected = rewards.shape[1:]
+    if next_value.shape != expected:
+        raise ValueError(f"next_value shape {tuple(next_value.shape)} must be {tuple(expected)}")
+
+
 def compute_gae(
     rewards: torch.Tensor,
     values: torch.Tensor,
@@ -13,6 +28,8 @@ def compute_gae(
     gamma: float,
     lam: float,
     next_value_override: torch.Tensor | None = None,
+    trace_dones: torch.Tensor | None = None,
+    trace_sign: float = 1.0,
 ) -> torch.Tensor:
     """Compute GAE advantages for one or many environments.
 
@@ -28,6 +45,11 @@ def compute_gae(
         next_value: value estimate(s) for the state after the last step
         gamma: discount factor
         lam: GAE lambda (bias-variance tradeoff)
+        trace_dones: Episode boundaries, including truncation. Stops recursive
+            advantages across resets without suppressing terminal-state bootstrap.
+            Defaults to terminated for trajectories without truncation.
+        trace_sign: -1 for alternating-player trajectories, +1 for one perspective.
+            Bootstrap overrides must already use the current transition's perspective.
         next_value_override: optional per-step bootstrap override, same shape
             as ``rewards``. Finite cells replace the default bootstrap (which
             is ``values[t+1]`` for ``t < T-1`` and ``next_value`` at ``t = T-1``).
@@ -39,6 +61,11 @@ def compute_gae(
         Advantage estimates, same shape as rewards. Always non-differentiable —
         GAE produces training targets, never gradient sources.
     """
+    # A bootstrap can continue at a time limit while the trace must stop at
+    # the reset. Consecutive alternating-player advantages also change sign.
+    if trace_dones is None:
+        trace_dones = terminated
+    _validate_shapes(rewards, values, terminated, next_value, next_value_override, trace_dones)
     # GAE outputs are training targets, never gradient sources. Wrap the entire
     # body so a caller passing model outputs (e.g. critic activations) cannot
     # leak the critic graph into the policy loss path.
@@ -67,7 +94,7 @@ def compute_gae(
 
             not_done = 1.0 - terminated[t].float()
             delta = rewards[t] + gamma * next_val * not_done - values[t]
-            last_gae = delta + gamma * lam * not_done * last_gae
+            last_gae = delta + gamma * lam * trace_sign * (1.0 - trace_dones[t].float()) * last_gae
             advantages[t] = last_gae
 
         return advantages
@@ -82,6 +109,8 @@ def compute_gae_padded(
     gamma: float,
     lam: float,
     next_value_override: torch.Tensor | None = None,
+    trace_dones: torch.Tensor | None = None,
+    trace_sign: float = 1.0,
 ) -> torch.Tensor:
     """Compute GAE for multiple envs with variable-length episodes via padding.
 
@@ -98,6 +127,11 @@ def compute_gae_padded(
         lengths: (N,) actual sequence length per env
         gamma: discount factor
         lam: GAE lambda
+        trace_dones: Episode boundaries, including truncation. Stops recursive
+            advantages across resets without suppressing terminal-state bootstrap.
+            Defaults to terminated for trajectories without truncation.
+        trace_sign: -1 for alternating-player trajectories, +1 for one perspective.
+            Bootstrap overrides must already use the current transition's perspective.
         next_value_override: optional (T_max, N) per-cell bootstrap override.
             Finite cells replace ``next_vals[t, i]`` for that cell — including
             the env's last valid step (overriding ``next_values[i]``). NaN cells
@@ -109,6 +143,10 @@ def compute_gae_padded(
         (T_max, N) advantages — only [:lengths[i], i] are meaningful per env.
         Always non-differentiable.
     """
+    if trace_dones is None:
+        trace_dones = terminated
+    _validate_shapes(rewards, values, terminated, next_values, next_value_override, trace_dones)
+
     with torch.no_grad():
         T_max, N = rewards.shape
         compute_dtype = values.dtype
@@ -142,7 +180,7 @@ def compute_gae_padded(
         for t in reversed(range(T_max)):
             not_done = 1.0 - terminated[t].float()
             delta = rewards[t] + gamma * next_vals[t] * not_done - values[t]
-            last_gae = delta + gamma * lam * not_done * last_gae
+            last_gae = delta + gamma * lam * trace_sign * (1.0 - trace_dones[t].float()) * last_gae
             advantages[t] = last_gae
 
         return advantages
@@ -156,6 +194,8 @@ def compute_gae_gpu(
     gamma: float,
     lam: float,
     next_value_override: torch.Tensor | None = None,
+    trace_dones: torch.Tensor | None = None,
+    trace_sign: float = 1.0,
 ) -> torch.Tensor:
     """GPU GAE for structured (T, N) rollouts.
 
@@ -176,6 +216,11 @@ def compute_gae_gpu(
         next_value: (N,) bootstrap value for the state after the last step
         gamma: discount factor
         lam: GAE lambda (bias-variance tradeoff)
+        trace_dones: Episode boundaries, including truncation. Stops recursive
+            advantages across resets without suppressing terminal-state bootstrap.
+            Defaults to terminated for trajectories without truncation.
+        trace_sign: -1 for alternating-player trajectories, +1 for one perspective.
+            Bootstrap overrides must already use the current transition's perspective.
         next_value_override: optional (T, N) per-cell bootstrap override.
             Finite cells replace the default bootstrap; NaN cells fall back
             to ``values[t+1]`` for ``t < T-1`` and ``next_value`` at ``t = T-1``.
@@ -188,6 +233,10 @@ def compute_gae_gpu(
         raise ValueError(
             f"compute_gae_gpu only supports 2D (T, N) input, got shape {rewards.shape}"
         )
+
+    if trace_dones is None:
+        trace_dones = terminated
+    _validate_shapes(rewards, values, terminated, next_value, next_value_override, trace_dones)
 
     with torch.no_grad():
         T, N = rewards.shape
@@ -203,7 +252,7 @@ def compute_gae_gpu(
             next_values = torch.where(override_mask, override, next_values)
         not_done = 1.0 - terminated.float()
         delta = rewards + gamma * next_values * not_done - values
-        decay = gamma * lam * not_done
+        decay = gamma * lam * trace_sign * (1.0 - trace_dones.float())
 
         # Step 2: sequential backward scan — each step is a fused GPU kernel over N envs.
         # The Python loop has T iterations (~128), each launching ~2 CUDA kernels.
@@ -227,6 +276,8 @@ def compute_gae_padded_gpu(
     gamma: float,
     lam: float,
     next_value_override: torch.Tensor | None = None,
+    trace_dones: torch.Tensor | None = None,
+    trace_sign: float = 1.0,
 ) -> torch.Tensor:
     """GPU GAE for variable-length per-env sequences via padding.
 
@@ -245,6 +296,11 @@ def compute_gae_padded_gpu(
         lengths: (N,) actual sequence length per env (CPU tensor is fine)
         gamma: discount factor
         lam: GAE lambda
+        trace_dones: Episode boundaries, including truncation. Stops recursive
+            advantages across resets without suppressing terminal-state bootstrap.
+            Defaults to terminated for trajectories without truncation.
+        trace_sign: -1 for alternating-player trajectories, +1 for one perspective.
+            Bootstrap overrides must already use the current transition's perspective.
         next_value_override: optional (T_max, N) per-cell bootstrap override.
             Finite cells replace ``next_vals[t, i]`` for that cell — including
             the env's last valid step. NaN cells fall back to the default.
@@ -257,6 +313,10 @@ def compute_gae_padded_gpu(
         raise ValueError(
             f"compute_gae_padded_gpu only supports 2D (T_max, N) input, got shape {rewards.shape}"
         )
+
+    if trace_dones is None:
+        trace_dones = terminated
+    _validate_shapes(rewards, values, terminated, next_values, next_value_override, trace_dones)
 
     with torch.no_grad():
         T_max, N = rewards.shape
@@ -284,7 +344,7 @@ def compute_gae_padded_gpu(
 
         not_done = 1.0 - terminated.float()
         delta = rewards + gamma * next_vals * not_done - values
-        decay = gamma * lam * not_done
+        decay = gamma * lam * trace_sign * (1.0 - trace_dones.float())
 
         # Sequential backward scan — each step is a fused GPU kernel over N envs.
         advantages = torch.empty_like(rewards)

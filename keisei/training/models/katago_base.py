@@ -9,6 +9,7 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 from torch.amp import autocast  # type: ignore[attr-defined]  # stubs lag behind PyTorch 2.x
+from torch.utils._pytree import register_dataclass
 
 
 @dataclass
@@ -24,6 +25,12 @@ class KataGoOutput:
     policy_logits: torch.Tensor
     value_logits: torch.Tensor
     score_lead: torch.Tensor
+
+
+# DDP's unused-output sink traverses pytrees, unlike its parameter traversal
+# which recognizes dataclasses directly. Register all heads so unused losses
+# receive undefined gradients instead of forcing zero gradients through them.
+register_dataclass(KataGoOutput)
 
 
 class KataGoBaseModel(ABC, nn.Module):

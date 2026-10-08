@@ -110,7 +110,6 @@ class DynamicConfig:
     grad_clip: float = 1.0  # must be > 0; PyTorch clips all grads to zero otherwise
     update_every_matches: int = 4
     max_updates_per_minute: int = 20
-    checkpoint_flush_every: int = 8
     disable_on_error: bool = True
     max_buffer_depth: int = 8
     max_consecutive_errors: int = 3
@@ -148,14 +147,12 @@ class DynamicConfig:
             raise ValueError(
                 f"max_updates_per_minute must be >= 1, got {self.max_updates_per_minute}"
             )
-        if self.checkpoint_flush_every < 1:
-            raise ValueError(
-                f"checkpoint_flush_every must be >= 1, got {self.checkpoint_flush_every}"
-            )
         if self.max_buffer_depth < 1:
             raise ValueError(
                 f"max_buffer_depth must be >= 1, got {self.max_buffer_depth}"
             )
+        if self.update_every_matches > self.max_buffer_depth:
+            raise ValueError("update_every_matches must be <= max_buffer_depth")
         if self.max_consecutive_errors < 1:
             raise ValueError(
                 f"max_consecutive_errors must be >= 1, got {self.max_consecutive_errors}"
@@ -541,7 +538,7 @@ class DistributedConfig:
     """
 
     sync_batchnorm: bool = True
-    find_unused_parameters: bool = False
+    find_unused_parameters: bool = True  # sparse WDL labels leave some heads unused per batch
     gradient_as_bucket_view: bool = True
 
 
