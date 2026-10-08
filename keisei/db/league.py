@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, TypedDict
 
 from keisei.db._connection import _connect
 
@@ -91,12 +91,22 @@ INSERT OR IGNORE INTO league_meta (id, bootstrapped) VALUES (1, 0);
 """
 
 
-def read_league_data(
-    db_path: str, max_results: int = 500
-) -> dict[str, list[dict[str, Any]]]:
-    """Read league entries, recent results, historical library, and gauntlet results."""
+class LeagueData(TypedDict):
+    entries: list[dict[str, Any]]
+    results: list[dict[str, Any]]
+    totals: dict[str, int]
+    entry_records: list[dict[str, Any]]
+    learner_recent_record: dict[str, Any] | None
+    historical_library: list[dict[str, Any]]
+    gauntlet_results: list[dict[str, Any]]
+    transitions: list[dict[str, Any]]
+
+
+def read_league_data(db_path: str, max_results: int = 500) -> LeagueData:
+    """Read a recent match feed and cumulative records from one database snapshot."""
     conn = _connect(db_path)
     try:
+        conn.execute("BEGIN")
         entries = conn.execute(
             "SELECT id, display_name, flavour_facts, model_params, architecture, "
             "elo_rating, games_played, created_epoch, created_at, "
@@ -114,6 +124,32 @@ def read_league_data(
             "FROM league_results ORDER BY id DESC LIMIT ?",
             (max_results,),
         ).fetchall()
+        totals = dict(conn.execute(
+            "SELECT COUNT(*) AS matches, COUNT(DISTINCT epoch) AS rounds, "
+            "COALESCE(SUM(num_games), 0) AS games FROM league_results"
+        ).fetchone())
+        entry_records = [dict(row) for row in conn.execute(
+            "SELECT entry_id, SUM(w) AS w, SUM(l) AS l, SUM(d) AS d, SUM(games) AS games "
+            "FROM ("
+            "SELECT entry_a_id AS entry_id, wins_a AS w, wins_b AS l, draws AS d, num_games AS games "
+            "FROM league_results UNION ALL "
+            "SELECT entry_b_id AS entry_id, wins_b AS w, wins_a AS l, draws AS d, num_games AS games "
+            "FROM league_results"
+            ") GROUP BY entry_id ORDER BY entry_id"
+        ).fetchall()]
+        learner_record = conn.execute(
+            "WITH learner AS ("
+            "SELECT e.id FROM training_state t JOIN league_entries e ON e.id = t.learner_entry_id WHERE t.id = 1"
+            "), recent_epochs AS ("
+            "SELECT DISTINCT r.epoch FROM league_results r, learner l "
+            "WHERE r.entry_a_id = l.id OR r.entry_b_id = l.id ORDER BY r.epoch DESC LIMIT 10"
+            ") SELECT l.id AS entry_id, "
+            "COALESCE(SUM(CASE WHEN r.entry_a_id = l.id THEN r.wins_a ELSE r.wins_b END), 0) AS w, "
+            "COALESCE(SUM(CASE WHEN r.entry_a_id = l.id THEN r.wins_b ELSE r.wins_a END), 0) AS l, "
+            "COALESCE(SUM(r.draws), 0) AS d, COUNT(DISTINCT r.epoch) AS rounds "
+            "FROM learner l LEFT JOIN league_results r ON (r.entry_a_id = l.id OR r.entry_b_id = l.id) "
+            "AND r.epoch IN (SELECT epoch FROM recent_epochs) GROUP BY l.id"
+        ).fetchone()
         parsed_entries = []
         for r in entries:
             e = dict(r)
@@ -156,6 +192,9 @@ def read_league_data(
         return {
             "entries": parsed_entries,
             "results": [dict(r) for r in results],
+            "totals": totals,
+            "entry_records": entry_records,
+            "learner_recent_record": dict(learner_record) if learner_record is not None else None,
             "historical_library": historical_slots,
             "gauntlet_results": gauntlet_results,
             "transitions": transitions,

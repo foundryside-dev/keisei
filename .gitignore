@@ -52,3 +52,6 @@ audio/
 # Misc 
 docs/bugs/generated/
 keisei.db-*
+
+# Persistent process lock for each showcase database
+*.showcase.lock

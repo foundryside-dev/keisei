@@ -55,6 +55,8 @@ class RoundStats:
     pairings_completed: int = 0
     total_games: int = 0
     total_plies: int = 0
+    # Capacity allocated to this round, persisted after run_round returns.
+    # This is not a live count of currently running matches.
     active_slots: int = 0
     model_load_time_s: float = 0.0
     model_load_count: int = 0

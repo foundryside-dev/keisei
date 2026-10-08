@@ -36,6 +36,8 @@ from keisei.showcase.inference import (
     enforce_cpu_only,
     run_inference,
 )
+from keisei.showcase.ownership import acquire_showcase_ownership
+from keisei.training.model_registry import get_obs_channels
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +135,8 @@ class ShowcaseRunner:
                 model = model_black if is_black_turn else model_white
                 arch = arch_black if is_black_turn else arch_white
 
-                obs = env.get_observation()
+                observation_mode = "katago" if get_obs_channels(arch) == 50 else "default"
+                obs = env.get_observation(observation_mode)
                 start_ms = time.monotonic()
                 policy_logits, win_prob = run_inference(model, obs, arch)
                 inference_ms = int((time.monotonic() - start_ms) * 1000)
@@ -223,18 +226,15 @@ class ShowcaseRunner:
             if self._stop_event.is_set():
                 mark_game_abandoned(self.db_path, game_id, "shutdown")
                 logger.info("Showcase game %d abandoned (shutdown)", game_id)
-            elif ply >= MAX_PLY:
-                mark_game_completed(self.db_path, game_id, "draw", total_ply=ply)
-                logger.info("Showcase game %d ended: draw (max ply)", game_id)
             else:
+                winner = state.get("winner")
                 result = state.get("result", "in_progress")
-                if result == "checkmate":
-                    winner = "white" if state["current_player"] == "black" else "black"
+                if winner in ("black", "white"):
                     status = f"{winner}_win"
-                elif result in ("repetition", "perpetual_check", "impasse", "max_moves"):
+                elif result in ("repetition", "impasse", "max_moves") or ply >= MAX_PLY:
                     status = "draw"
                 else:
-                    status = "draw"
+                    raise ValueError(f"Terminal game has no valid outcome: {result!r}")
                 mark_game_completed(self.db_path, game_id, status, total_ply=ply)
                 logger.info("Showcase game %d ended: %s (%d ply)", game_id, status, ply)
 
@@ -272,35 +272,44 @@ class ShowcaseRunner:
         self._last_auto_showcase = time.monotonic()
         logger.info("Auto-showcase: queued top-2 league entries")
 
+    def _heartbeat_loop(self) -> None:
+        while not self._stop_event.wait(HEARTBEAT_INTERVAL):
+            try:
+                self._write_heartbeat()
+            except Exception:
+                logger.exception("Showcase heartbeat failed")
+
     def run(self) -> None:
+        # Acquire before recovery or heartbeat writes; a second runner must not
+        # alter the existing owner's live games or singleton heartbeat.
+        with acquire_showcase_ownership(self.db_path):
+            self._run_owned()
+
+    def _run_owned(self) -> None:
         enforce_cpu_only(self.cpu_threads)
         self._startup_cleanup()
         self._write_heartbeat()
+        heartbeat = threading.Thread(target=self._heartbeat_loop, name="showcase-heartbeat", daemon=True)
+        heartbeat.start()
         logger.info("Showcase runner started (pid=%d, db=%s)", os.getpid(), self.db_path)
-        heartbeat_time = time.monotonic()
-
-        while not self._stop_event.is_set():
-            now = time.monotonic()
-            if now - heartbeat_time >= HEARTBEAT_INTERVAL:
-                self._write_heartbeat()
-                heartbeat_time = now
-
-            match = claim_next_match(self.db_path)
-            if match is not None:
+        try:
+            while not self._stop_event.is_set():
+                match = claim_next_match(self.db_path)
+                if match is not None:
+                    try:
+                        self._run_game(match)
+                    except Exception:
+                        logger.exception("Unhandled error in _run_game (queue_id=%s)", match["id"])
+                    continue
                 try:
-                    self._run_game(match)
+                    self._maybe_auto_showcase()
                 except Exception:
-                    logger.exception("Unhandled error in _run_game (queue_id=%s)", match["id"])
-                continue
-
-            try:
-                self._maybe_auto_showcase()
-            except Exception:
-                logger.warning("Auto-showcase check failed", exc_info=True)
-
-            self._stop_event.wait(timeout=POLL_INTERVAL)
-
-        logger.info("Showcase runner stopped")
+                    logger.warning("Auto-showcase check failed", exc_info=True)
+                self._stop_event.wait(timeout=POLL_INTERVAL)
+        finally:
+            self._stop_event.set()
+            heartbeat.join()
+            logger.info("Showcase runner stopped")
 
     def stop(self) -> None:
         self._stop_event.set()

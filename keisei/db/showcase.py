@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import random
 import sqlite3
 import time
@@ -93,9 +94,28 @@ def _retry_write(conn: sqlite3.Connection, sql: str, params: tuple[Any, ...] | d
     raise RuntimeError("unreachable")  # pragma: no cover
 
 
-def queue_match(db_path: str, entry_id_1: str, entry_id_2: str, speed: str) -> int:
+def queue_match(
+    db_path: str, entry_id_1: str, entry_id_2: str, speed: str,
+    *, max_pending: int | None = None, validate_entries: bool = False,
+) -> int:
     conn = _connect(db_path)
     try:
+        # Serialize validation and insertion so simultaneous requests cannot
+        # exceed the pending limit or queue an entry removed between reads.
+        conn.execute("BEGIN IMMEDIATE")
+        if validate_entries:
+            found = conn.execute(
+                "SELECT COUNT(*) FROM league_entries WHERE id IN (?, ?)",
+                (entry_id_1, entry_id_2),
+            ).fetchone()[0]
+            if found != 2:
+                raise ValueError("Both league entries must exist")
+        if max_pending is not None:
+            pending = conn.execute(
+                "SELECT COUNT(*) FROM showcase_queue WHERE status = 'pending'"
+            ).fetchone()[0]
+            if pending >= max_pending:
+                raise ValueError("Queue is full")
         cursor = _retry_write(conn,
             "INSERT INTO showcase_queue (entry_id_1, entry_id_2, speed, status, requested_at) VALUES (?, ?, ?, 'pending', ?)",
             (entry_id_1, entry_id_2, speed, _now_iso()))
@@ -112,6 +132,7 @@ def claim_next_match(db_path: str) -> dict[str, Any] | None:
         row = conn.execute(
             """UPDATE showcase_queue SET status = 'running', started_at = ?
                WHERE id = (SELECT id FROM showcase_queue WHERE status = 'pending' ORDER BY id ASC LIMIT 1)
+               AND NOT EXISTS (SELECT 1 FROM showcase_queue WHERE status = 'running')
                RETURNING id, entry_id_1, entry_id_2, speed, status, requested_at, started_at""",
             (now,)).fetchone()
         conn.commit()
@@ -130,23 +151,28 @@ def read_queue(db_path: str) -> list[dict[str, Any]]:
         conn.close()
 
 
-def cancel_match(db_path: str, queue_id: int) -> None:
+def cancel_match(db_path: str, queue_id: int) -> bool:
     conn = _connect(db_path)
     try:
-        _retry_write(
+        cursor = _retry_write(
             conn,
-            "UPDATE showcase_queue SET status = 'cancelled', completed_at = ? WHERE id = ? AND "
-            "status = 'pending'",
+            "UPDATE showcase_queue SET status = 'cancelled', completed_at = ? "
+            "WHERE id = ? AND status = 'pending'",
             (_now_iso(), queue_id),
         )
+        return cursor.rowcount == 1
     finally:
         conn.close()
 
 
-def update_queue_speed(db_path: str, queue_id: int, speed: str) -> None:
+def update_queue_speed(db_path: str, queue_id: int, speed: str) -> bool:
     conn = _connect(db_path)
     try:
-        _retry_write(conn, "UPDATE showcase_queue SET speed = ? WHERE id = ?", (speed, queue_id))
+        cursor = _retry_write(
+            conn, "UPDATE showcase_queue SET speed = ? WHERE id = ? AND status IN ('pending', 'running')",
+            (speed, queue_id),
+        )
+        return cursor.rowcount == 1
     finally:
         conn.close()
 
@@ -185,6 +211,26 @@ def read_active_showcase_game(db_path: str) -> dict[str, Any] | None:
         conn.close()
 
 
+
+def read_showcase_game(db_path: str, game_id: int) -> dict[str, Any] | None:
+    conn = _connect(db_path)
+    try:
+        row = conn.execute("SELECT * FROM showcase_games WHERE id = ?", (game_id,)).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def read_latest_showcase_game(db_path: str) -> dict[str, Any] | None:
+    """Return the last game, including its final result for spectators."""
+    conn = _connect(db_path)
+    try:
+        row = conn.execute("SELECT * FROM showcase_games ORDER BY id DESC LIMIT 1").fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
 def write_showcase_move(db_path: str, *, game_id: int, ply: int, action_index: int,
                          usi_notation: str, board_json: str, hands_json: str,
                          current_player: str, in_check: bool, value_estimate: float,
@@ -215,7 +261,7 @@ def write_showcase_move(db_path: str, *, game_id: int, ply: int, action_index: i
                         "move_usi": move_usi,
                         "move_time_ms": move_time_ms, "created_at": now,
                     })
-                conn.execute("UPDATE showcase_games SET total_ply = ? WHERE id = ?", (ply, game_id))
+                conn.execute("UPDATE showcase_games SET total_ply = MAX(total_ply, ?) WHERE id = ?", (ply, game_id))
                 conn.commit()
                 return
             except sqlite3.OperationalError as e:
@@ -286,17 +332,26 @@ def read_heartbeat(db_path: str) -> dict[str, Any] | None:
 
 
 def cleanup_orphaned_games(db_path: str, stale_after_s: float = 60.0) -> int:
-    """Mark orphaned in-progress games as abandoned. Checks heartbeat age first."""
+    """Recover games unless their recent heartbeat belongs to a living runner."""
     conn = _connect(db_path)
     try:
         now = _now_iso()
-        hb = conn.execute("SELECT last_heartbeat FROM showcase_heartbeat WHERE id = 1").fetchone()
+        hb = conn.execute("SELECT last_heartbeat, runner_pid FROM showcase_heartbeat WHERE id = 1").fetchone()
         if hb:
             try:
                 last_hb = datetime.fromisoformat(hb["last_heartbeat"].replace("Z", "+00:00"))
                 age = (datetime.now(timezone.utc) - last_hb).total_seconds()
                 if age < stale_after_s:
-                    return 0
+                    pid = hb["runner_pid"]
+                    if isinstance(pid, int) and pid > 0:
+                        try:
+                            os.kill(pid, 0)
+                        except ProcessLookupError:
+                            pass  # A recent heartbeat does not keep a dead runner alive.
+                        except PermissionError:
+                            return 0  # The process exists but belongs to another user.
+                        else:
+                            return 0
             except (ValueError, TypeError):
                 pass
         cursor = conn.execute(
