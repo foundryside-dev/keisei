@@ -42,9 +42,9 @@ jobs:
       - name: Install dependencies
         run: |
           uv export --frozen --extra dev --extra sl --no-hashes --no-emit-project --output-file /tmp/keisei-ci-constraints.txt
-          uv pip install --python .venv/bin/python -c /tmp/keisei-ci-constraints.txt torch --index-url https://download.pytorch.org/whl/cpu
+          uv pip install --python .venv/bin/python --no-deps -c /tmp/keisei-ci-constraints.txt torch --index-url https://download.pytorch.org/whl/cpu
           uv pip install --python .venv/bin/python -c /tmp/keisei-ci-constraints.txt -e ".[dev,sl]" psutil -e ./shogi-engine/crates/shogi-gym
-          .venv/bin/python -c "import shogi_gym"
+          .venv/bin/python -c "from shogi_gym import VecEnv"
 
       - name: Ruff check
         run: .venv/bin/ruff check .
@@ -82,9 +82,9 @@ jobs:
       - name: Install dependencies
         run: |
           uv export --frozen --extra dev --extra sl --no-hashes --no-emit-project --output-file /tmp/keisei-ci-constraints.txt
-          uv pip install --python .venv/bin/python -c /tmp/keisei-ci-constraints.txt torch --index-url https://download.pytorch.org/whl/cpu
+          uv pip install --python .venv/bin/python --no-deps -c /tmp/keisei-ci-constraints.txt torch --index-url https://download.pytorch.org/whl/cpu
           uv pip install --python .venv/bin/python -c /tmp/keisei-ci-constraints.txt -e ".[dev,sl]" psutil -e ./shogi-engine/crates/shogi-gym
-          .venv/bin/python -c "import shogi_gym"
+          .venv/bin/python -c "from shogi_gym import VecEnv"
 
       - name: Run fast tests
         run: .venv/bin/pytest -x --tb=short -q -n 2 -m "not slow and not integration"
@@ -154,9 +154,9 @@ jobs:
       - name: Install dependencies
         run: |
           uv export --frozen --extra dev --extra sl --no-hashes --no-emit-project --output-file /tmp/keisei-ci-constraints.txt
-          uv pip install --python .venv/bin/python -c /tmp/keisei-ci-constraints.txt torch --index-url https://download.pytorch.org/whl/cpu
+          uv pip install --python .venv/bin/python --no-deps -c /tmp/keisei-ci-constraints.txt torch --index-url https://download.pytorch.org/whl/cpu
           uv pip install --python .venv/bin/python -c /tmp/keisei-ci-constraints.txt -e ".[dev,sl]" psutil -e ./shogi-engine/crates/shogi-gym
-          .venv/bin/python -c "import shogi_gym"
+          .venv/bin/python -c "from shogi_gym import VecEnv"
 
       - name: Run all tests (including slow + integration)
         run: .venv/bin/pytest --tb=short -q
