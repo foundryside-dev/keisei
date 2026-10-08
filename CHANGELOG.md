@@ -43,6 +43,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **PPO numerical safeguards** — disabled auxiliary heads and ignored value labels
   cannot inject NaN gradients through the shared trunk. Non-finite active losses or
   gradients stop before an optimizer step, with unused-head support for DDP.
+  Masked entropy excludes illegal log probabilities before loss scaling, avoiding
+  overflow that could otherwise skip every CUDA update.
 - **`play_match()` overshoot when `num_envs > games_target`** — the first/final
   partial batch counted every completed lane, so e.g. `games_target=1` with
   `num_envs=4` returned 4 games. `play_batch()` now takes an `active_envs`

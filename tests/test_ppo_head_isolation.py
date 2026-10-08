@@ -154,6 +154,53 @@ def test_grad_scaler_recovers_from_overflow_and_only_counts_successful_updates(m
     assert all(torch.isfinite(parameter).all() for parameter in model.parameters())
 
 
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+@pytest.mark.parametrize("compile_mode", [None, "default"])
+def test_scaled_masked_entropy_keeps_policy_gradients_finite(monkeypatch, device, compile_mode):
+    if device == "cuda" and not torch.cuda.is_available():
+        pytest.skip("CUDA unavailable")
+    model = TinySharedModel()
+    model.policy = torch.nn.Linear(4, 11259)
+    with torch.no_grad():
+        model.policy.weight.zero_()
+        model.policy.bias.zero_()
+    model.to(device)
+    ppo = KataGoPPOAlgorithm(
+        KataGoPPOParams(
+            epochs_per_batch=1, batch_size=2, use_amp=True,
+            compile_mode=compile_mode, lambda_value=0.0, lambda_score=0.0,
+        ), model,
+    )
+    if device == "cpu":
+        ppo.scaler = torch.amp.GradScaler("cpu")
+    observations = torch.tensor([[1.0, -0.5], [-0.4, 0.7]], device=device)
+    masks = torch.zeros(2, 11259, dtype=torch.bool, device=device)
+    masks[:, :200] = True
+    actions, log_probs, _ = ppo.select_actions(observations, masks)
+    buffer = KataGoRolloutBuffer(2, (2,), 11259)
+    buffer.add(
+        observations.cpu(), actions.cpu(), log_probs.cpu(), torch.zeros(2),
+        torch.tensor([0.0, 1.0]), torch.ones(2, dtype=torch.bool),
+        torch.ones(2, dtype=torch.bool), masks.cpu(), torch.full((2,), -1), torch.zeros(2),
+    )
+    original_step = ppo.optimizer.step
+    steps = []
+
+    def record_step(*args, **kwargs):
+        steps.append(True)
+        return original_step(*args, **kwargs)
+
+    monkeypatch.setattr(ppo.optimizer, "step", record_step)
+    metrics = ppo.update(buffer, torch.zeros(2, device=device))
+    assert len(steps) == 1
+    assert ppo.scaler.get_scale() == 65536.0
+    assert metrics["entropy"] == pytest.approx(torch.tensor(200.0).log().item(), abs=1e-5)
+    assert model.policy.weight.grad is not None
+    assert torch.isfinite(model.policy.weight.grad).all()
+    assert model.policy.weight.grad[200:].eq(0).all()
+    assert model.policy.weight[:200].ne(0).any()
+
+
 def _distributed_worker(
     rank: int, init_path: str, result_dir: str, failure_head: str | None = None,
     schedule: str | None = None,

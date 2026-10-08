@@ -893,7 +893,13 @@ class KataGoPPOAlgorithm:
                         new_log_probs, batch_old_log_probs,
                         batch_advantages, self.params.clip_epsilon,
                     )
-                    entropy = distribution.entropy().mean()
+                    # Categorical.entropy clamps illegal -inf logits to the
+                    # float32 minimum. Loss scaling can overflow its backward
+                    # multiplier, yielding 0 * inf through softmax. Zero those
+                    # entries before multiplying so illegal actions have zero
+                    # contribution in both forward and scaled backward.
+                    entropy_logits = distribution.logits.masked_fill(~batch_legal_masks, 0.0)
+                    entropy = -(distribution.probs * entropy_logits).sum(dim=-1).mean()
 
                     # Value + score loss — dispatch through adapter if provided
                     if value_adapter is not None:
