@@ -1,7 +1,7 @@
 <script>
   import { leagueEntries } from '../stores/league.js'
   import { showcaseGame, showcaseQueue, queueDepth, sidecarAlive, showcaseSpeed } from '../stores/showcase.js'
-  import { sendShowcaseCommand } from './ws.js'
+  import { sendShowcaseCommand, connectionState, showcaseCommandPending, showcaseCommandFeedback } from './ws.js'
 
   let selectedEntry1 = ''
   let selectedEntry2 = ''
@@ -23,33 +23,35 @@
   }
 
   $: activeEntries = ($leagueEntries || []).filter(e => e.status === 'active')
+  $: runningMatch = $showcaseQueue.find(q => q.status === 'running' && (!$showcaseGame || q.id === $showcaseGame.queue_id))
 
-  // canStart depends only on local form state + sidecar/queue. Each negative
-  // condition produces a distinct hint so the user knows *why* the button is
-  // disabled.
+  // Keep local selection, connection and server confirmation state distinct.
   $: disabledReason = (() => {
+    if ($connectionState !== 'connected') return 'Connect to the server before starting a match.'
+    if ($showcaseCommandPending) return 'Waiting for the server to confirm the previous command.'
     if (!$sidecarAlive) return 'Showcase engine is offline — start the sidecar to enable matches.'
     if ($queueDepth >= 5) return `Queue is full (${$queueDepth} pending). Wait for one to start before adding more.`
     if (!selectedEntry1 || !selectedEntry2) return 'Pick a player for both Black and White.'
     if (selectedEntry1 === selectedEntry2) return 'Black and White must be different players.'
+    if (!activeEntries.some(e => String(e.id) === selectedEntry1) || !activeEntries.some(e => String(e.id) === selectedEntry2)) return 'A selected player is no longer active. Pick both players again.'
     return null
   })()
   $: canStart = disabledReason === null
 
   function requestMatch() {
     if (!canStart) return
-    sendShowcaseCommand({
+    const sent = sendShowcaseCommand({
       type: 'request_showcase_match',
       entry_id_1: selectedEntry1,
       entry_id_2: selectedEntry2,
       speed: $showcaseSpeed,
     })
-    if (collapsed) expanded = false
+    if (sent && collapsed) expanded = false
   }
 
   function changeSpeed(newSpeed) {
-    showcaseSpeed.set(newSpeed)
-    sendShowcaseCommand({ type: 'change_showcase_speed', speed: newSpeed })
+    if (!runningMatch) return
+    sendShowcaseCommand({ type: 'change_showcase_speed', queue_id: runningMatch.id, speed: newSpeed })
   }
 
   function toggleExpanded() {
@@ -69,8 +71,9 @@
     <div class="speed-controls compact" role="group" aria-label="Playback speed">
       {#each ['slow', 'normal', 'fast'] as s}
         <button
-          class:active={$showcaseSpeed === s}
-          aria-pressed={$showcaseSpeed === s}
+          class:active={runningMatch?.speed === s}
+          aria-pressed={runningMatch?.speed === s}
+          disabled={!runningMatch || !$sidecarAlive || $connectionState !== 'connected' || !!$showcaseCommandPending}
           on:click={() => changeSpeed(s)}
           title={SPEED_HINTS[s]}
         >{s}</button>
@@ -106,13 +109,13 @@
         {/each}
       </select>
     </div>
-    <div class="speed-controls" role="group" aria-label="Playback speed">
-      <span class="label">Speed:</span>
+    <div class="speed-controls" role="group" aria-label="New match speed">
+      <span class="label">New match speed:</span>
       {#each ['slow', 'normal', 'fast'] as s}
         <button
           class:active={$showcaseSpeed === s}
           aria-pressed={$showcaseSpeed === s}
-          on:click={() => changeSpeed(s)}
+          on:click={() => showcaseSpeed.set(s)}
           title={SPEED_HINTS[s]}
         >{s}</button>
       {/each}
@@ -136,9 +139,18 @@
   </div>
 {/if}
 
+{#if $showcaseCommandFeedback}
+  <p class="command-feedback" class:error={$showcaseCommandFeedback.kind === 'error'} role={$showcaseCommandFeedback.kind === 'error' ? 'alert' : 'status'}>
+    {$showcaseCommandFeedback.message}
+  </p>
+{/if}
+
 <style>
+  .command-feedback { padding: 8px 12px; font-size: 13px; color: var(--text-secondary); }
+  .command-feedback.error { color: var(--danger); }
   .collapsed-row {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
     padding: 6px 12px;
@@ -183,10 +195,11 @@
   .collapse-btn:hover { color: var(--text-primary); border-color: var(--text-secondary); }
   .collapse-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
-  .entry-selectors { display: flex; align-items: center; gap: 8px; }
+  .entry-selectors { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; flex-wrap: wrap; }
   .vs { font-weight: 600; color: var(--text-muted); font-size: 13px; }
 
   select {
+    max-width: 100%;
     padding: 6px 8px;
     min-height: 36px;
     font-size: 13px;
@@ -219,6 +232,7 @@
     background: var(--tab-active-bg);
   }
   .speed-controls button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+  .speed-controls button:disabled { opacity: 0.5; cursor: not-allowed; }
 
   .start-btn {
     padding: 6px 16px;

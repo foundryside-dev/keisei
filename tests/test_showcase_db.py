@@ -398,3 +398,25 @@ class TestSQLiteConcurrency:
         t_write.join()
 
         assert len(read_errors) == 0
+
+def test_out_of_order_moves_do_not_rewind_total_ply(db: str) -> None:
+    qid = queue_match(db, "e1", "e2", "normal")
+    game_id = create_showcase_game(
+        db, queue_id=qid, entry_id_black="e1", entry_id_white="e2", elo_black=1500, elo_white=1500, name_black="A", name_white="B"
+    )
+    for ply in (5, 3, 5):
+        write_showcase_move(
+            db,
+            game_id=game_id,
+            ply=ply,
+            action_index=1,
+            usi_notation="7g7f",
+            board_json="[]",
+            hands_json="{}",
+            current_player="white",
+            in_check=False,
+            value_estimate=0.5,
+            top_candidates="[]",
+            move_time_ms=1,
+        )
+        assert read_active_showcase_game(db)["total_ply"] == 5

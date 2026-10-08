@@ -116,7 +116,7 @@ class TestSpectatorFromSfen:
             SpectatorEnv.from_sfen("not a valid sfen")
 
     def test_from_sfen_with_hands(self):
-        sfen_with_hands = "lnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL b 2P 1"
+        sfen_with_hands = "4k4/9/9/9/9/9/9/9/4K4 b 2P 1"
         env = SpectatorEnv.from_sfen(sfen_with_hands)
         d = env.to_dict()
         assert d["hands"]["black"]["pawn"] == 2

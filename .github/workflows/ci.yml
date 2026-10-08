@@ -16,6 +16,23 @@ env:
   MKL_NUM_THREADS: "1"
 
 jobs:
+  webui:
+    name: Web UI
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: webui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: webui/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
   # ── Stage 1: Fast feedback (every PR + push) ─────────────────────
   lint:
     name: Lint & Type Check
@@ -43,8 +60,8 @@ jobs:
         run: |
           uv export --frozen --extra dev --extra sl --no-hashes --no-emit-project --output-file /tmp/keisei-ci-constraints.txt
           uv pip install --python .venv/bin/python --no-deps -c /tmp/keisei-ci-constraints.txt torch --index-url https://download.pytorch.org/whl/cpu
-          uv pip install --python .venv/bin/python -c /tmp/keisei-ci-constraints.txt -e ".[dev,sl]" psutil -e ./shogi-engine/crates/shogi-gym
-          .venv/bin/python -c "from shogi_gym import VecEnv"
+          uv pip install --python .venv/bin/python -c /tmp/keisei-ci-constraints.txt -e ".[dev,sl]" psutil ./shogi-engine/crates/shogi-gym
+          .venv/bin/python -I -c "from shogi_gym import VecEnv, SpectatorEnv; from importlib.resources import files; assert files('shogi_gym').joinpath('py.typed').is_file(); assert SpectatorEnv().get_observation('katago').shape == (50, 9, 9)"
 
       - name: Ruff check
         run: .venv/bin/ruff check .
@@ -83,8 +100,8 @@ jobs:
         run: |
           uv export --frozen --extra dev --extra sl --no-hashes --no-emit-project --output-file /tmp/keisei-ci-constraints.txt
           uv pip install --python .venv/bin/python --no-deps -c /tmp/keisei-ci-constraints.txt torch --index-url https://download.pytorch.org/whl/cpu
-          uv pip install --python .venv/bin/python -c /tmp/keisei-ci-constraints.txt -e ".[dev,sl]" psutil -e ./shogi-engine/crates/shogi-gym
-          .venv/bin/python -c "from shogi_gym import VecEnv"
+          uv pip install --python .venv/bin/python -c /tmp/keisei-ci-constraints.txt -e ".[dev,sl]" psutil ./shogi-engine/crates/shogi-gym
+          .venv/bin/python -I -c "from shogi_gym import VecEnv, SpectatorEnv; from importlib.resources import files; assert files('shogi_gym').joinpath('py.typed').is_file(); assert SpectatorEnv().get_observation('katago').shape == (50, 9, 9)"
 
       - name: Run fast tests
         run: .venv/bin/pytest -x --tb=short -q -n 2 -m "not slow and not integration"
@@ -94,6 +111,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Native test runtime
+        run: |
+          python -m pip install "numpy>=1.24"
+          echo "PYO3_PYTHON=$pythonLocation/bin/python" >> "$GITHUB_ENV"
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -155,8 +181,11 @@ jobs:
         run: |
           uv export --frozen --extra dev --extra sl --no-hashes --no-emit-project --output-file /tmp/keisei-ci-constraints.txt
           uv pip install --python .venv/bin/python --no-deps -c /tmp/keisei-ci-constraints.txt torch --index-url https://download.pytorch.org/whl/cpu
-          uv pip install --python .venv/bin/python -c /tmp/keisei-ci-constraints.txt -e ".[dev,sl]" psutil -e ./shogi-engine/crates/shogi-gym
-          .venv/bin/python -c "from shogi_gym import VecEnv"
+          uv pip install --python .venv/bin/python -c /tmp/keisei-ci-constraints.txt -e ".[dev,sl]" psutil ./shogi-engine/crates/shogi-gym
+          .venv/bin/python -I -c "from shogi_gym import VecEnv, SpectatorEnv; from importlib.resources import files; assert files('shogi_gym').joinpath('py.typed').is_file(); assert SpectatorEnv().get_observation('katago').shape == (50, 9, 9)"
 
       - name: Run all tests (including slow + integration)
         run: .venv/bin/pytest --tb=short -q
+
+      - name: Native Python contracts
+        run: .venv/bin/pytest shogi-engine/crates/shogi-gym/tests --tb=short -q

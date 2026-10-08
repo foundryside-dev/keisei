@@ -98,39 +98,17 @@ impl SpatialActionMapper {
 
     /// Check if a board move is a knight move, and if so return slot (0=left, 1=right).
     ///
-    /// In perspective space, knights always move |dr|=2, |dc|=1. The "left/right"
-    /// classification is based on dc sign relative to dr sign:
-    ///   dc < 0 when dr < 0 (or dc > 0 when dr > 0) → slot 0 ("left")
-    ///   dc > 0 when dr < 0 (or dc < 0 when dr > 0) → slot 1 ("right")
-    ///
-    /// This normalization ensures encode/decode roundtrip regardless of whether
-    /// dr is -2 (Black perspective) or +2 (White perspective after flip).
+    /// Perspective rotation makes every legal knight jump have dr=-2.
+    /// Left/right is the column delta in that normalized coordinate system.
     fn knight_slot(from_row: i8, from_col: i8, to_row: i8, to_col: i8) -> Option<usize> {
         let dr = to_row - from_row;
         let dc = to_col - from_col;
 
-        if dr.unsigned_abs() != 2 || dc.unsigned_abs() != 1 {
+        if dr != -2 || dc.unsigned_abs() != 1 {
             return None;
         }
 
-        // This function operates in perspective space (after apply_perspective).
-        // Legal forward knight moves always have dr=-2 in perspective space
-        // because the 180° flip normalises White's forward (dr=+2 absolute)
-        // to match Black's convention (dr=-2). A positive dr here means
-        // a backward (illegal) knight jump was passed in.
-        debug_assert!(
-            dr < 0,
-            "knight_slot received dr={} in perspective space; \
-             legal forward knights always have dr=-2 after perspective flip. \
-             This likely means an illegal backward knight move was encoded.",
-            dr,
-        );
-
-        // Normalize dc relative to dr: "same sign as dr" → left, "opposite sign" → right.
-        // This is invariant under the 180° perspective flip which negates both dr and dc.
-        let same_sign = (dr > 0 && dc > 0) || (dr < 0 && dc < 0);
-
-        if same_sign {
+        if dc < 0 {
             Some(0) // "left" (dc same sign as dr)
         } else {
             Some(1) // "right" (dc opposite sign to dr)
@@ -373,6 +351,37 @@ impl SpatialActionMapper {
 mod tests {
     use super::*;
     use std::collections::HashSet;
+
+    #[test]
+    fn test_backward_knight_encoding_returns_error_for_both_perspectives() {
+        for perspective in [Color::Black, Color::White] {
+            for col in [3, 5] {
+                let from = Square::from_row_col(4, 4).unwrap();
+                let to = Square::from_row_col(6, col).unwrap();
+                let mv = Move::Board {
+                    from: if perspective == Color::White {
+                        from.flip()
+                    } else {
+                        from
+                    },
+                    to: if perspective == Color::White {
+                        to.flip()
+                    } else {
+                        to
+                    },
+                    promote: false,
+                };
+                assert!(
+                    <SpatialActionMapper as ActionMapper>::encode(
+                        &SpatialActionMapper,
+                        mv,
+                        perspective,
+                    )
+                    .is_err()
+                );
+            }
+        }
+    }
 
     fn mapper() -> SpatialActionMapper {
         SpatialActionMapper

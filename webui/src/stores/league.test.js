@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { get } from 'svelte/store'
 import {
-  leagueEntries, leagueResults, eloHistory,
+  leagueEntries, leagueResults, eloHistory, leagueTotals, entryRecordsRaw, learnerRecentRecordRaw,
   leagueRanked, entryWLD, headToHead, eloDelta, leagueStats,
   historicalLibrary, gauntletResults, leagueTransitions,
   learnerEntry, leagueByRole, transitionCounts, headToHeadRaw,
@@ -12,6 +12,9 @@ import { trainingState } from './training.js'
 beforeEach(() => {
   leagueEntries.set([])
   leagueResults.set([])
+  leagueTotals.set(null)
+  entryRecordsRaw.set([])
+  learnerRecentRecordRaw.set(null)
   eloHistory.set([])
   historicalLibrary.set([])
   gauntletResults.set([])
@@ -208,13 +211,14 @@ describe('diffLeagueEntries', () => {
 // --- Derived stores: no module-level mutable state, standard imports work fine.
 
 describe('entryWLD', () => {
-  it('returns empty map when no results', () => {
+  it('returns empty map when no authoritative records', () => {
     expect(get(entryWLD).size).toBe(0)
   })
 
-  it('aggregates W/L/D for A and mirrors for B', () => {
-    leagueResults.set([
-      { entry_a_id: 1, entry_b_id: 2, wins_a: 3, wins_b: 1, draws: 2 },
+  it('reads cumulative records for both participants', () => {
+    entryRecordsRaw.set([
+      { entry_id: 1, w: 3, l: 1, d: 2 },
+      { entry_id: 2, w: 1, l: 3, d: 2 },
     ])
     const wld = get(entryWLD)
     // Side A
@@ -223,18 +227,17 @@ describe('entryWLD', () => {
     expect(wld.get(2)).toEqual({ w: 1, l: 3, d: 2 })
   })
 
-  it('accumulates across multiple result rows', () => {
-    leagueResults.set([
-      { entry_a_id: 1, entry_b_id: 2, wins_a: 2, wins_b: 0, draws: 0 },
-      { entry_a_id: 1, entry_b_id: 3, wins_a: 1, wins_b: 1, draws: 1 },
+  it('uses backend cumulative totals independently of recent rows', () => {
+    entryRecordsRaw.set([
+      { entry_id: 1, w: 3, l: 1, d: 1 },
     ])
     const wld = get(entryWLD)
     expect(wld.get(1)).toEqual({ w: 3, l: 1, d: 1 })
   })
 
-  it('handles zero/missing wins_a/wins_b/draws', () => {
-    leagueResults.set([
-      { entry_a_id: 1, entry_b_id: 2 }, // all undefined
+  it('handles zero/missing record counts', () => {
+    entryRecordsRaw.set([
+      { entry_id: 1 }, // all undefined
     ])
     const wld = get(entryWLD)
     expect(wld.get(1)).toEqual({ w: 0, l: 0, d: 0 })
@@ -332,6 +335,7 @@ describe('leagueStats', () => {
   it('computes summary for a single entry', () => {
     leagueEntries.set([{ id: 1, elo_rating: 1000, architecture: 'a', status: 'active' }])
     leagueResults.set([])
+    leagueTotals.set({ matches: 0, rounds: 0, games: 0 })
     const stats = get(leagueStats)
     expect(stats.poolSize).toBe(1)
     expect(stats.totalMatches).toBe(0)
@@ -348,6 +352,7 @@ describe('leagueStats', () => {
       { id: 3, elo_rating: 1100, architecture: 'c', status: 'active' },
     ])
     leagueResults.set([{ id: 10 }, { id: 11 }])
+    leagueTotals.set({ matches: 2, rounds: 1, games: 8 })
     const stats = get(leagueStats)
     expect(stats.poolSize).toBe(3)
     expect(stats.totalMatches).toBe(2)

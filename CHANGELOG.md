@@ -23,6 +23,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   silently dropping work.
 
 ### Fixed
+- **League dashboard records** — lifetime totals and W/L/D include all results;
+  learner summaries use its latest ten tournament epochs. Sorting preserves
+  ranking and champion identity on a shared composite Elo scale. Historical
+  benchmarks are accessible, configured capacities are respected, and narrow
+  screens keep navigation and league content reachable.
+- **Spectator controls and results** — match requests and speed/cancel commands
+  validate identities, report correlated acknowledgements and errors, and enforce
+  queue limits atomically. Finished boards and results remain visible through idle
+  periods and reconnects. Queue and league metadata changes are pushed promptly;
+  completed-round telemetry is labelled with its timestamp rather than shown as live.
+- **Showcase inference and liveness** — use real KataGo check/repetition features,
+  refresh replaced model checkpoints, reject non-finite model output, retain
+  decisive engine winners on the final ply, publish heartbeats during games, and
+  recover a dead runner even when its last heartbeat is recent. Exclusive process
+  ownership prevents duplicate runners from corrupting game and heartbeat state.
+- **Engine input and terminal safety** — validate SFEN syntax, hand bounds,
+  playable kings/material and turn consistency before simulation. Loaded terminal
+  positions are adjudicated immediately; checked kings cannot trigger impasse.
+  Safe move-list access checks bounds in release builds, invalid backward knight
+  encodings return errors, and native ply limits cannot overflow metadata.
+- **Native package distribution** — wheels include the Python wrapper, type stubs
+  and typing marker, including when rebuilt from a source distribution. CI tests
+  normal package installs and runs the frontend regression suite.
 - **PPO trajectory and likelihood correctness** — alternating self-play traces
   use mover-relative signs; truncation stops traces while retaining terminal-board
   bootstrap values. Dense and partial rollouts preserve environment identity across

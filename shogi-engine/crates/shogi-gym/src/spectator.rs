@@ -4,9 +4,8 @@ use pyo3::types::{PyDict, PyList};
 use shogi_core::GameState;
 
 use crate::action_mapper::{ACTION_SPACE_SIZE, ActionMapper, DefaultActionMapper};
-use crate::observation::{
-    BUFFER_LEN, DefaultObservationGenerator, NUM_CHANNELS, ObservationGenerator,
-};
+use crate::katago_observation::KataGoObservationGenerator;
+use crate::observation::{DefaultObservationGenerator, ObservationGenerator};
 use crate::spatial_action_mapper::{SPATIAL_ACTION_SPACE_SIZE, SpatialActionMapper};
 use crate::spectator_data::{build_spectator_dict, color_name, move_notation, move_usi};
 
@@ -83,11 +82,16 @@ impl SpectatorEnv {
     /// Create a new SpectatorEnv.
     ///
     /// Args:
-    ///     max_ply: Maximum number of plies before the game ends (default 500).
+    ///     max_ply: Positive maximum number of plies before the game ends (default 500).
     ///     action_mode: "default" (13527 actions) or "spatial" (11259, matches CNN policy head).
     #[new]
     #[pyo3(signature = (max_ply = 500, action_mode = "default"))]
     pub fn new(max_ply: u32, action_mode: &str) -> PyResult<Self> {
+        if max_ply == 0 {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "max_ply must be positive",
+            ));
+        }
         let mapper = match action_mode {
             "default" => SpectatorActionMode::Default(DefaultActionMapper),
             "spatial" => SpectatorActionMode::Spatial(SpatialActionMapper::new()),
@@ -111,13 +115,18 @@ impl SpectatorEnv {
     ///
     /// Args:
     ///     sfen: SFEN position string.
-    ///     max_ply: Maximum plies before truncation (default 500).
+    ///     max_ply: Positive maximum plies before truncation (default 500).
     ///
     /// Raises ValueError if the SFEN is invalid.
     #[staticmethod]
     #[pyo3(signature = (sfen, max_ply = None, action_mode = "default"))]
     pub fn from_sfen(sfen: &str, max_ply: Option<u32>, action_mode: &str) -> PyResult<Self> {
         let max_ply = max_ply.unwrap_or(500);
+        if max_ply == 0 {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "max_ply must be positive",
+            ));
+        }
         let mapper = match action_mode {
             "default" => SpectatorActionMode::Default(DefaultActionMapper),
             "spatial" => SpectatorActionMode::Spatial(SpatialActionMapper::new()),
@@ -128,8 +137,9 @@ impl SpectatorEnv {
                 )));
             }
         };
-        let game = GameState::from_sfen(sfen, max_ply)
+        let mut game = GameState::from_sfen(sfen, max_ply)
             .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("invalid SFEN: {e}")))?;
+        game.check_termination();
         Ok(SpectatorEnv {
             game,
             max_ply,
@@ -188,6 +198,7 @@ impl SpectatorEnv {
     /// - `ply`: int
     /// - `is_over`: bool
     /// - `result`: "in_progress" / "checkmate" / "repetition" / "perpetual_check" / "impasse" / "max_moves"
+    /// - `winner`: "black" / "white" for decisive results, otherwise None
     /// - `sfen`: str
     /// - `in_check`: bool
     /// - `move_history`: list of `{"action": int, "notation": str}`
@@ -213,23 +224,44 @@ impl SpectatorEnv {
         self.game.position.to_sfen()
     }
 
-    /// Return the observation as a shaped (46, 9, 9) numpy array.
+    /// Return a (C, 9, 9) observation using the same generators as VecEnv.
+    /// "default" gives 46 channels; "katago" gives 50, including check and
+    /// repetition features from the full game history.
     ///
     /// The observation is generated from the current player's perspective,
     /// consistent with VecEnv observation format.
-    pub fn get_observation<'py>(&self, py: Python<'py>) -> PyResult<Py<PyArray3<f32>>> {
-        let mut buffer = vec![0.0_f32; BUFFER_LEN];
+    #[pyo3(signature = (observation_mode = "default"))]
+    pub fn get_observation<'py>(
+        &self,
+        py: Python<'py>,
+        observation_mode: &str,
+    ) -> PyResult<Py<PyArray3<f32>>> {
+        let katago = KataGoObservationGenerator::new();
+        let generator: &dyn ObservationGenerator = match observation_mode {
+            "default" => &self.obs_gen,
+            "katago" => &katago,
+            _ => {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "Unknown observation_mode '{observation_mode}'. Valid: 'default', 'katago'"
+                )));
+            }
+        };
+        let channels = generator.channels();
+        let mut buffer = vec![0.0_f32; channels * 81];
         let perspective = self.game.position.current_player;
-        self.obs_gen.generate(&self.game, perspective, &mut buffer);
+        generator.generate(&self.game, perspective, &mut buffer);
         let array = buffer.to_pyarray(py);
         let shaped = array
-            .reshape([NUM_CHANNELS, 9, 9])
+            .reshape([channels, 9, 9])
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         Ok(shaped.unbind())
     }
 
     /// Return a list of legal action indices for the current position.
     pub fn legal_actions(&mut self) -> Vec<usize> {
+        if self.game.result.is_terminal() {
+            return Vec::new();
+        }
         let perspective = self.game.position.current_player;
         let moves = self.game.legal_moves();
         moves
@@ -251,6 +283,9 @@ impl SpectatorEnv {
     /// `&mut self` is required because the underlying move-legality check uses make/unmake
     /// internally; the position is logically unchanged on return.
     pub fn legal_moves_with_usi(&mut self) -> Vec<(usize, String)> {
+        if self.game.result.is_terminal() {
+            return Vec::new();
+        }
         let perspective = self.game.position.current_player;
         let moves = self.game.legal_moves();
         moves
@@ -305,6 +340,63 @@ mod tests {
     use crate::action_mapper::ActionMapper;
     use pyo3::Python;
     use shogi_core::{Color, GameState, HandPieceType, Move, Square};
+
+    #[test]
+    fn test_katago_observation_preserves_repetition_and_check_features() {
+        let mut env =
+            SpectatorEnv::from_sfen("4k4/4R4/9/9/9/9/9/9/4K4 w - 1", None, "default").unwrap();
+        env.game.repetition_map.insert(env.game.position.hash, 2);
+        pyo3::prepare_freethreaded_python();
+        Python::with_gil(|py| {
+            let env = Py::new(py, env).unwrap();
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("observation_mode", "katago").unwrap();
+            let result = env
+                .bind(py)
+                .call_method("get_observation", (), Some(&kwargs))
+                .expect("spectator must support actual KataGo observations");
+            let array = result.downcast::<PyArray3<f32>>().unwrap();
+            let readonly = array.readonly();
+            let values = readonly.as_slice().unwrap();
+            assert_eq!(values.len(), 50 * 81);
+            assert_eq!(values[44 * 81], 1.0);
+            assert_eq!(values[48 * 81], 1.0);
+            let default_result = env.bind(py).call_method0("get_observation").unwrap();
+            let default_array = default_result.downcast::<PyArray3<f32>>().unwrap();
+            let default_readonly = default_array.readonly();
+            let default_values = default_readonly.as_slice().unwrap();
+            assert_eq!(default_values.len(), 46 * 81);
+            assert_eq!(default_values[44 * 81], 0.0);
+        });
+    }
+
+    #[test]
+    fn test_constructor_rejects_zero_ply_limit() {
+        assert!(SpectatorEnv::new(0, "default").is_err());
+        assert!(
+            SpectatorEnv::from_sfen("4k4/9/9/9/9/9/9/9/4K4 b - 1", Some(0), "default",).is_err()
+        );
+    }
+
+    #[test]
+    fn test_from_sfen_adjudicates_an_already_mated_position() {
+        let mut env =
+            SpectatorEnv::from_sfen("Kr7/1g7/9/9/9/9/9/9/8k b - 1", None, "default").unwrap();
+        assert!(env.is_over());
+        assert!(env.legal_actions().is_empty());
+        assert!(env.legal_moves_with_usi().is_empty());
+    }
+
+    #[test]
+    fn test_legal_action_apis_are_empty_after_a_ply_limit() {
+        let mut env = SpectatorEnv::new(1, "spatial").unwrap();
+        let mv = env.game.legal_moves()[0];
+        env.game.make_move(mv);
+        env.game.check_termination();
+        assert!(env.is_over());
+        assert!(env.legal_actions().is_empty());
+        assert!(env.legal_moves_with_usi().is_empty());
+    }
 
     // -----------------------------------------------------------------------
     // SpectatorEnv internal logic tests (no Python needed)

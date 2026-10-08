@@ -45,6 +45,7 @@ def mock_spectator_env() -> MagicMock:
             "ply": move_count,
             "is_over": move_count >= 3,
             "result": "checkmate" if move_count >= 3 else "in_progress",
+            "winner": "black" if move_count >= 3 else None,
             "in_check": False,
             "sfen": "startpos",
             "move_history": [{"action": i, "notation": f"move{i}"} for i in range(1, move_count + 1)],
@@ -68,7 +69,7 @@ def mock_spectator_env() -> MagicMock:
     env.step.side_effect = mock_step
     env.reset.side_effect = mock_reset
     env.legal_actions.return_value = [42, 100, 200]
-    env.get_observation.return_value = np.zeros((46, 9, 9), dtype=np.float32)
+    env.get_observation.return_value = np.zeros((50, 9, 9), dtype=np.float32)
     # is_over is a @property (#[getter]) on real SpectatorEnv — use PropertyMock
     type(env).is_over = property(lambda self: move_count >= 3)
     return env
@@ -166,7 +167,7 @@ class TestShowcaseIntegration:
             assert param.device == torch.device("cpu"), f"{name} on {param.device}"
 
         # Run inference
-        obs = np.random.randn(46, 9, 9).astype(np.float32)  # SpectatorEnv channels
+        obs = np.random.randn(50, 9, 9).astype(np.float32)  # KataGo observation contract
         policy, win_prob = run_inference(model, obs, arch)
         assert policy.shape[0] > 0
         assert 0.0 <= win_prob <= 1.0

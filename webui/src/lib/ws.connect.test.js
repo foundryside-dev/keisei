@@ -319,6 +319,16 @@ describe('connectionState debounce on close', () => {
 })
 
 describe('onerror', () => {
+  it('does not reconnect when the close event arrives after intentional disconnect', () => {
+    connect()
+    const socket = mockInstances[0]
+    socket._simulateOpen()
+    disconnect()
+    socket._simulateClose()
+    vi.advanceTimersByTime(60000)
+    expect(mockInstances).toHaveLength(1)
+  })
+
   it('closes the WebSocket on error', () => {
     connect()
     const ws = mockInstances[0]

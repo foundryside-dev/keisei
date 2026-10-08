@@ -9,9 +9,10 @@ import {
   leagueEntries, leagueResults, eloHistory,
   historicalLibrary, gauntletResults, leagueTransitions,
   headToHeadRaw,
+  leagueTotals, entryRecordsRaw, learnerRecentRecordRaw, tournamentStats, styleProfilesRaw,
 } from '../stores/league.js'
 import {
-  showcaseGame, showcaseMoves, showcaseQueue, sidecarAlive,
+  showcaseGame, showcaseMoves, showcaseQueue, sidecarAlive, showcaseSelectedPly,
 } from '../stores/showcase.js'
 
 beforeEach(() => {
@@ -33,6 +34,72 @@ beforeEach(() => {
 })
 
 describe('handleMessage — init', () => {
+  it('clears completed-round and profile data when reconnecting to an empty run', () => {
+    tournamentStats.set({ active_slots: 4 })
+    styleProfilesRaw.set([{ checkpoint_id: 1 }])
+    handleMessage({ type: 'init', tournament_stats: null })
+    expect(get(tournamentStats)).toBeNull()
+    expect(get(styleProfilesRaw)).toEqual([])
+  })
+
+  it('clears a removed completed-round snapshot on league updates', () => {
+    tournamentStats.set({ active_slots: 4 })
+    handleMessage({ type: 'league_update', tournament_stats: null })
+    expect(get(tournamentStats)).toBeNull()
+  })
+
+  it('allows an explicit null learner identity to clear the previous learner', () => {
+    trainingState.set({ learner_entry_id: 12 })
+    handleMessage({ type: 'training_status', learner_entry_id: null })
+    expect(get(trainingState).learner_entry_id).toBeNull()
+  })
+  it('clears all trainer metadata when the server reports the training row was removed', () => {
+    trainingState.set({ learner_entry_id: 12, display_name: 'Old run', config_json: '{}' })
+    handleMessage({ type: 'training_status', training_state: null })
+    expect(get(trainingState)).toBeNull()
+  })
+  it('replaces authoritative trainer metadata while retaining live system and episode fields', () => {
+    trainingState.set({ learner_entry_id: 12, display_name: 'Old run', config_json: '{"old":true}', total_epochs: 20 })
+    handleMessage({ type: 'training_status', training_state: { learner_entry_id: 13, display_name: '', config_json: '{}', total_epochs: null }, episodes: 7, system_stats: { cpu_percent: 10 } })
+    expect(get(trainingState)).toEqual({ learner_entry_id: 13, display_name: '', config_json: '{}', total_epochs: null, episodes: 7, system_stats: { cpu_percent: 10 } })
+  })
+  it('resets replay selection when reconnecting to a different showcase game', () => {
+    showcaseGame.set({ id: 1, status: 'black_wins' })
+    showcaseSelectedPly.set(10)
+    handleMessage({ type: 'init', showcase: { game: { id: 2, status: 'in_progress' }, moves: [] } })
+    expect(get(showcaseSelectedPly)).toBeNull()
+  })
+  it('loads lifetime aggregates and clears them on a new empty snapshot', () => {
+    const totals = { matches: 700, rounds: 80, games: 7000 }
+    const records = [{ entry_id: 1, w: 500, l: 300, d: 200, games: 1000 }]
+    handleMessage({ type: 'init', league_totals: totals, entry_records: records })
+    expect(get(leagueTotals)).toEqual(totals)
+    expect(get(entryRecordsRaw)).toEqual(records)
+    handleMessage({ type: 'init' })
+    expect(get(leagueTotals)).toBeNull()
+    expect(get(entryRecordsRaw)).toEqual([])
+  })
+
+  it('loads and clears the complete recent learner record on every snapshot', () => {
+    const record = { entry_id: 2, w: 7, l: 2, d: 1, rounds: 1 }
+    for (const type of ['init', 'league_update']) {
+      handleMessage({ type, learner_recent_record: record })
+      expect(get(learnerRecentRecordRaw)).toEqual(record)
+      handleMessage({ type })
+      expect(get(learnerRecentRecordRaw)).toBeNull()
+    }
+  })
+
+  it('replaces lifetime aggregates on league updates, including empty resets', () => {
+    const totals = { matches: 701, rounds: 81, games: 7010 }
+    const records = [{ entry_id: 1, w: 507, l: 302, d: 201, games: 1010 }]
+    handleMessage({ type: 'league_update', league_totals: totals, entry_records: records })
+    expect(get(leagueTotals)).toEqual(totals)
+    expect(get(entryRecordsRaw)).toEqual(records)
+    handleMessage({ type: 'league_update' })
+    expect(get(leagueTotals)).toBeNull()
+    expect(get(entryRecordsRaw)).toEqual([])
+  })
   it('populates all stores from init message', () => {
     handleMessage({
       type: 'init',
@@ -345,6 +412,12 @@ describe('handleMessage — league_update with dropped data streams', () => {
 })
 
 describe('handleMessage — showcase_update', () => {
+  it('clears the previous board history when a new game arrives before its first move', () => {
+    showcaseGame.set({ id: 10, status: 'black_wins' })
+    showcaseMoves.set([{ game_id: 10, ply: 1 }])
+    handleMessage({ type: 'showcase_update', game: { id: 11, status: 'in_progress' }, new_moves: [] })
+    expect(get(showcaseMoves)).toEqual([])
+  })
   it('sets game and appends moves within the same game', () => {
     showcaseMoves.set([{ ply: 1, game_id: 10 }])
     handleMessage({
@@ -380,18 +453,26 @@ describe('handleMessage — showcase_update', () => {
     expect(get(showcaseMoves)[2].ply).toBe(3)
   })
 
-  it('sets sidecarAlive to true', () => {
+  it('does not override an offline heartbeat when receiving persisted game metadata', () => {
     sidecarAlive.set(false)
     handleMessage({
       type: 'showcase_update',
       game: { id: 10, status: 'in_progress' },
       new_moves: [],
     })
-    expect(get(sidecarAlive)).toBe(true)
+    expect(get(sidecarAlive)).toBe(false)
   })
 })
 
 describe('handleMessage — showcase_status', () => {
+  it('retains the final result and board when no active game remains', () => {
+    showcaseGame.set({ id: 10, status: 'black_wins' })
+    showcaseMoves.set([{ game_id: 10, ply: 99 }])
+    handleMessage({ type: 'showcase_status', active_game_id: null, queue: [], sidecar_alive: false })
+    expect(get(showcaseGame)?.status).toBe('black_wins')
+    expect(get(showcaseMoves)).toHaveLength(1)
+    expect(get(sidecarAlive)).toBe(false)
+  })
   it('updates queue and sidecar status', () => {
     handleMessage({
       type: 'showcase_status',

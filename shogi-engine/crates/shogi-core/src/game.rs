@@ -80,10 +80,46 @@ impl GameState {
         Self::from_position(position, max_ply)
     }
 
-    /// Parse a SFEN string into a GameState.
+    /// Parse a playable SFEN position. Unlike structural `Position` parsing,
+    /// this requires both kings, physically possible material totals, and a
+    /// turn consistent with the nonmoving king being safe.
     pub fn from_sfen(sfen: &str, max_ply: u32) -> Result<GameState, ShogiError> {
         let position = Position::from_sfen(sfen)?;
-        Ok(Self::from_position(position, max_ply))
+        let mut kings = [0u8; 2];
+        let mut material = [0u16; HandPieceType::COUNT];
+        for raw in position.board {
+            if let Some(piece) = Piece::from_u8(raw) {
+                if let Some(hpt) = HandPieceType::from_piece_type(piece.piece_type()) {
+                    material[hpt.index()] += 1;
+                } else {
+                    kings[piece.color() as usize] += 1;
+                }
+            }
+        }
+        if kings != [1, 1] {
+            return Err(ShogiError::InvalidSfen(
+                "playable position requires exactly one king per player".into(),
+            ));
+        }
+        let maxima = [18, 4, 4, 4, 4, 2, 2];
+        for hpt in HandPieceType::ALL {
+            let idx = hpt.index();
+            for color in [Color::Black, Color::White] {
+                material[idx] += u16::from(position.hand_count(color, hpt));
+            }
+            if material[idx] > maxima[idx] {
+                return Err(ShogiError::InvalidSfen(format!(
+                    "too many {hpt:?} pieces in playable position"
+                )));
+            }
+        }
+        let game = Self::from_position(position, max_ply);
+        if game.is_color_in_check(game.position.current_player.opponent()) {
+            return Err(ShogiError::InvalidSfen(
+                "nonmoving player's king cannot be in check".into(),
+            ));
+        }
+        Ok(game)
     }
 
     /// Build a GameState from an already-constructed Position.
@@ -473,8 +509,8 @@ impl GameState {
     ///
     /// Checks in order:
     /// 1. Sennichite / perpetual check
-    /// 2. Impasse (CSA 24-point rule)
-    /// 3. Checkmate / stalemate (no legal moves)
+    /// 2. Checkmate / stalemate (no legal moves)
+    /// 3. Impasse (automatic 24-point adjudication)
     /// 4. Max ply reached, only if the game has no genuine terminal outcome
     pub fn check_termination(&mut self) {
         if self.result.is_terminal() {
@@ -487,13 +523,7 @@ impl GameState {
             return;
         }
 
-        // 2. Impasse.
-        if let Some(result) = crate::rules::check_impasse(self) {
-            self.result = result;
-            return;
-        }
-
-        // 3. No legal moves: checkmate or stalemate.
+        // 2. No legal moves: checkmate or stalemate.
         let moves = self.legal_moves();
         if moves.is_empty() {
             if self.is_in_check() {
@@ -508,6 +538,9 @@ impl GameState {
                     winner: self.position.current_player.opponent(),
                 };
             }
+        } else if let Some(result) = crate::rules::check_impasse(self) {
+            // 3. Only adjudicate an impasse after ruling out a decisive ending.
+            self.result = result;
         } else if self.ply >= self.max_ply {
             // 4. Truncate only an otherwise ongoing game. A mate or repetition
             // on the last allowed ply must retain its terminal reward.
@@ -548,6 +581,41 @@ mod tests {
     use crate::attack::compute_attack_map;
     use crate::movelist::MoveList;
     use crate::piece::Piece;
+
+    #[test]
+    fn test_from_sfen_rejects_missing_or_duplicate_kings() {
+        for board in [
+            "9/9/9/9/9/9/9/9/4K4",
+            "4k4/9/9/9/9/9/9/9/9",
+            "4k4/9/9/9/9/9/9/9/3KK4",
+            "3kk4/9/9/9/9/9/9/9/4K4",
+        ] {
+            assert!(GameState::from_sfen(&format!("{board} b - 1"), 500).is_err());
+        }
+    }
+
+    #[test]
+    fn test_from_sfen_rejects_a_checked_nonmoving_king() {
+        assert!(GameState::from_sfen("4k4/4R4/9/9/9/9/9/9/4K4 b - 1", 500).is_err());
+        assert!(GameState::from_sfen("4k4/9/9/9/9/9/9/4r4/4K4 w - 1", 500).is_err());
+        assert!(GameState::from_sfen("9/9/9/9/4k4/4K4/9/9/9 b - 1", 500).is_err());
+    }
+
+    #[test]
+    fn test_from_sfen_allows_the_moving_king_to_be_in_check() {
+        let mut game = GameState::from_sfen("4k4/4R4/9/9/9/9/9/9/4K4 w - 1", 500)
+            .expect("a checked player must be allowed to answer the check");
+        assert!(game.is_in_check());
+        assert!(!game.legal_moves().is_empty());
+    }
+
+    #[test]
+    fn test_from_sfen_rejects_excess_global_material_before_capture() {
+        // 18 in hand plus the pawn on board would overflow the hash table on capture.
+        assert!(GameState::from_sfen("4k4/9/9/9/4p4/9/9/9/4K4 b 18P 1", 500).is_err());
+        // Promoted pieces still contribute their base type to the global total.
+        assert!(GameState::from_sfen("4k4/9/9/9/4+r4/9/9/9/4K4 b 2R 1", 500).is_err());
+    }
     use crate::types::{Color, GameResult, HandPieceType, Move, PieceType, Square};
 
     // -----------------------------------------------------------------------

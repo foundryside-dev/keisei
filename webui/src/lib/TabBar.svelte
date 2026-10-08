@@ -66,6 +66,8 @@
 <style>
   .tab-bar {
     display: flex;
+    flex-wrap: wrap;
+    max-width: 100%;
     gap: 4px;
   }
 

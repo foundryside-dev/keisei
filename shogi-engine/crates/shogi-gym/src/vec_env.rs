@@ -574,6 +574,7 @@ impl VecEnv {
 #[pymethods]
 impl VecEnv {
     /// Create a new VecEnv with `num_envs` parallel games.
+    /// `max_ply` must be 1..=65535, matching the u16 ply metadata contract.
     #[new]
     #[pyo3(signature = (num_envs = 512, max_ply = 500, observation_mode = "default", action_mode = "default"))]
     pub fn new(
@@ -582,6 +583,11 @@ impl VecEnv {
         observation_mode: &str,
         action_mode: &str,
     ) -> PyResult<Self> {
+        if !(1..=u32::from(u16::MAX)).contains(&max_ply) {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "max_ply must be between 1 and 65535 (ply metadata range)",
+            ));
+        }
         let obs_mode = match observation_mode {
             "default" => ObsMode::Default(DefaultObservationGenerator::new()),
             "katago" => ObsMode::KataGo(KataGoObservationGenerator::new()),
@@ -922,6 +928,14 @@ mod tests {
     use crate::action_mapper::ActionMapper;
     use crate::spatial_action_mapper::{SPATIAL_ACTION_SPACE_SIZE, SpatialActionMapper};
     use shogi_core::Color;
+
+    #[test]
+    fn test_constructor_rejects_ply_limits_outside_metadata_range() {
+        for max_ply in [0, u32::from(u16::MAX) + 1] {
+            assert!(VecEnv::new(1, max_ply, "default", "default").is_err());
+        }
+        assert!(VecEnv::new(1, u32::from(u16::MAX), "default", "default").is_ok());
+    }
 
     /// Test-only constructor that builds a default-mode VecEnv without PyO3.
     fn make_env(num_envs: usize, max_ply: u32) -> VecEnv {

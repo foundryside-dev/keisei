@@ -1,5 +1,5 @@
 [build-system]
-requires = ["maturin>=1.7,<2.0"]
+requires = ["maturin>=1.12.1,<2.0"]
 build-backend = "maturin"
 
 [project]
@@ -13,3 +13,10 @@ manifest-path = "Cargo.toml"
 python-source = "../../python"
 module-name = "shogi_gym._native"
 features = ["pyo3/extension-module"]
+# The Python package is outside this crate's project root. Include its sources
+# explicitly so wheel builds do not depend on an editable-install source path.
+include = [
+    { path = "shogi_gym/*.py", format = "wheel" },
+    { path = "shogi_gym/*.pyi", format = "wheel" },
+    { path = "shogi_gym/py.typed", format = "wheel" },
+]

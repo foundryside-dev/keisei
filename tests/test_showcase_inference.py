@@ -60,7 +60,7 @@ class TestInference:
         return model
 
     def test_run_inference_returns_policy_and_value(self, resnet_model: nn.Module) -> None:
-        obs = np.random.randn(46, 9, 9).astype(np.float32)  # SpectatorEnv produces 46ch
+        obs = np.random.randn(50, 9, 9).astype(np.float32)  # KataGo observation contract
         policy_logits, win_prob = run_inference(resnet_model, obs, "resnet")
         assert isinstance(policy_logits, np.ndarray)
         assert isinstance(win_prob, float)
@@ -70,7 +70,7 @@ class TestInference:
         params = {"channels": 32, "num_blocks": 2}
         model = build_model("se_resnet", params)
         model.eval()
-        obs = np.random.randn(46, 9, 9).astype(np.float32)  # 46ch padded to 50 internally
+        obs = np.random.randn(50, 9, 9).astype(np.float32)  # Complete KataGo features
         policy_logits, win_prob = run_inference(model, obs, "se_resnet")
         assert isinstance(policy_logits, np.ndarray)
         assert isinstance(win_prob, float)

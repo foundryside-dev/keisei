@@ -4,6 +4,21 @@ import { trainingState } from './training.js'
 
 export const leagueEntries = writable([])
 export const leagueResults = writable([])
+/** Lifetime aggregates are independent of the bounded recent match feed. */
+export const leagueTotals = writable(null)
+export const entryRecordsRaw = writable([])
+export const learnerRecentRecordRaw = writable(null)
+export const leagueCapacity = derived(trainingState, $state => {
+  let league = {}
+  try { league = JSON.parse($state?.config_json || '{}').league || {} } catch {}
+  const roles = {
+    frontier_static: league.frontier?.slots ?? 5,
+    recent_fixed: league.recent?.slots ?? 5,
+    dynamic: league.dynamic?.slots ?? 10,
+    historical: league.history?.slots ?? 5,
+  }
+  return { total: league.max_active_entries ?? roles.frontier_static + roles.recent_fixed + roles.dynamic, roles }
+})
 export const eloHistory = writable([])
 export const tournamentStats = writable(null)
 export const styleProfilesRaw = writable([])
@@ -198,21 +213,10 @@ export function diffLeagueEntries(entries) {
 }
 
 /** Aggregate W/L/D totals keyed by entry id */
-export const entryWLD = derived(leagueResults, ($results) => {
+export const entryWLD = derived(entryRecordsRaw, ($records) => {
   const map = new Map()
-  for (const r of $results) {
-    // Side A
-    const a = map.get(r.entry_a_id) || { w: 0, l: 0, d: 0 }
-    a.w += r.wins_a || 0
-    a.l += r.wins_b || 0
-    a.d += r.draws || 0
-    map.set(r.entry_a_id, a)
-    // Side B (mirror)
-    const b = map.get(r.entry_b_id) || { w: 0, l: 0, d: 0 }
-    b.w += r.wins_b || 0
-    b.l += r.wins_a || 0
-    b.d += r.draws || 0
-    map.set(r.entry_b_id, b)
+  for (const record of $records) {
+    map.set(record.entry_id, { w: record.w || 0, l: record.l || 0, d: record.d || 0 })
   }
   return map
 })
@@ -276,24 +280,24 @@ export const headToHead = derived(headToHeadRaw, ($h2hRaw) => {
 
 /** League-level summary stats */
 export const leagueStats = derived(
-  [leagueEntries, leagueResults],
-  ([$entries, $results]) => {
+  [leagueEntries, leagueTotals],
+  ([$entries, $totals]) => {
     const active = $entries.filter(e => e.status === 'active')
-    if (active.length === 0) return null
+    if ($entries.length === 0 && !$totals?.matches) return null
     const elos = active.map(e => displayElo(e).value)
     const sorted = [...active].sort((a, b) => displayElo(b).value - displayElo(a).value)
-    const totalMatches = $results.length
-    const totalRounds = new Set($results.map(r => r.epoch)).size
-    const totalGames = $results.reduce((sum, r) => sum + (r.wins_a || 0) + (r.wins_b || 0) + (r.draws || 0), 0)
+    const totalMatches = $totals?.matches ?? null
+    const totalRounds = $totals?.rounds ?? null
+    const totalGames = $totals?.games ?? null
     return {
       poolSize: active.length,
       totalMatches,
       totalRounds,
       totalGames,
-      topEntry: sorted[0],
-      eloMin: Math.round(Math.min(...elos)),
-      eloMax: Math.round(Math.max(...elos)),
-      eloSpread: Math.round(Math.max(...elos) - Math.min(...elos)),
+      topEntry: sorted[0] || null,
+      eloMin: elos.length ? Math.round(Math.min(...elos)) : null,
+      eloMax: elos.length ? Math.round(Math.max(...elos)) : null,
+      eloSpread: elos.length ? Math.round(Math.max(...elos) - Math.min(...elos)) : null,
     }
   }
 )
@@ -314,6 +318,15 @@ export const learnerEntry = derived(
   }
 )
 
+/** Complete last-ten-epoch record; reject stale data while learner state changes. */
+export const learnerRecentRecord = derived(
+  [learnerRecentRecordRaw, trainingState],
+  ([$record, $state]) => {
+    if (!$record || $state?.learner_entry_id == null || $record.entry_id !== $state.learner_entry_id) return null
+    return { w: $record.w, l: $record.l, d: $record.d, rounds: $record.rounds }
+  },
+)
+
 /** Style profiles keyed by checkpoint_id for quick lookup */
 export const styleProfiles = derived(styleProfilesRaw, ($profiles) => {
   const map = new Map()
@@ -323,24 +336,8 @@ export const styleProfiles = derived(styleProfilesRaw, ($profiles) => {
   return map
 })
 
-const ROLE_ELO_COLUMN = {
-  frontier_static: 'elo_frontier',
-  dynamic: 'elo_dynamic',
-  recent_fixed: 'elo_recent',
-}
-const ROLE_ELO_TAG = {
-  frontier_static: 'F',
-  dynamic: 'D',
-  recent_fixed: 'R',
-}
-
-/** Return { value, tag } for the entry's displayed Elo (role-specific when available). */
+/** Composite Elo is the shared ranking/display scale; role ratings live in entry detail. */
 export function displayElo(entry) {
-  const col = ROLE_ELO_COLUMN[entry.role]
-  const roleVal = col ? entry[col] : null
-  if (roleVal != null && roleVal !== 1000) {
-    return { value: roleVal, tag: ROLE_ELO_TAG[entry.role] || '' }
-  }
   return { value: entry.elo_rating, tag: '' }
 }
 
