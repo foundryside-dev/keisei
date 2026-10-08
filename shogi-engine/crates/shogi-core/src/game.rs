@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use crate::attack::{compute_attack_map, AttackMap};
+use crate::attack::{AttackMap, compute_attack_map};
 use crate::movegen::{generate_pseudo_legal_board_moves, generate_pseudo_legal_drops};
 use crate::movelist::MoveList;
 use crate::piece::Piece;
@@ -33,9 +33,11 @@ pub fn compute_pawn_columns(pos: &Position) -> [[bool; 9]; 2] {
     for idx in 0..Square::NUM_SQUARES {
         let sq = Square::new_unchecked(idx as u8);
         if let Some(piece) = pos.piece_at(sq)
-            && piece.piece_type() == PieceType::Pawn && !piece.is_promoted() {
-                cols[piece.color() as usize][sq.col() as usize] = true;
-            }
+            && piece.piece_type() == PieceType::Pawn
+            && !piece.is_promoted()
+        {
+            cols[piece.color() as usize][sq.col() as usize] = true;
+        }
     }
     cols
 }
@@ -148,7 +150,9 @@ impl GameState {
 
         match mv {
             Move::Board { from, to, promote } => {
-                let moving_piece = self.position.piece_at(from)
+                let moving_piece = self
+                    .position
+                    .piece_at(from)
                     .expect("make_move: no piece at from square");
 
                 // 1. Remove piece from `from`.
@@ -172,7 +176,8 @@ impl GameState {
                     }
                     let new_count = old_count + 1;
                     self.position.hash ^= z.hash_hand(mover_color, hand_type, new_count);
-                    self.position.set_hand_count(mover_color, hand_type, new_count);
+                    self.position
+                        .set_hand_count(mover_color, hand_type, new_count);
                 }
 
                 // 3. Place piece at `to` (possibly promoted).
@@ -193,10 +198,12 @@ impl GameState {
                     self.update_pawn_column_for(mover_color, from.col());
                 }
                 if let Some(cap) = captured
-                    && cap.piece_type() == PieceType::Pawn && !cap.is_promoted() {
-                        let opp = mover_color.opponent();
-                        self.update_pawn_column_for(opp, to.col());
-                    }
+                    && cap.piece_type() == PieceType::Pawn
+                    && !cap.is_promoted()
+                {
+                    let opp = mover_color.opponent();
+                    self.update_pawn_column_for(opp, to.col());
+                }
                 // If a pawn was placed (not promoted), mark the destination column.
                 if pt == PieceType::Pawn && !promote && !moving_piece.is_promoted() {
                     self.pawn_columns[mover_color as usize][to.col() as usize] = true;
@@ -210,7 +217,10 @@ impl GameState {
                 }
             }
 
-            Move::Drop { to, piece_type: hpt } => {
+            Move::Drop {
+                to,
+                piece_type: hpt,
+            } => {
                 // 1. Decrement hand count with hash updates.
                 let old_count = self.position.hand_count(mover_color, hpt);
                 debug_assert!(old_count > 0, "make_move: dropping piece not in hand");
@@ -261,7 +271,9 @@ impl GameState {
     /// Reverse a `make_move` call using the provided undo information.
     pub fn unmake_move(&mut self, mv: Move, undo: UndoInfo) {
         // 1. Decrement repetition count for current hash.
-        let count = self.repetition_map.get_mut(&self.position.hash)
+        let count = self
+            .repetition_map
+            .get_mut(&self.position.hash)
             .expect("unmake_move: current hash not in repetition map");
         if *count <= 1 {
             self.repetition_map.remove(&self.position.hash);
@@ -277,15 +289,13 @@ impl GameState {
         match mv {
             Move::Board { from, to, promote } => {
                 // Remove placed piece from `to`.
-                let placed = self.position.piece_at(to)
+                let placed = self
+                    .position
+                    .piece_at(to)
                     .expect("unmake_move: no piece at to square");
 
                 // Restore original piece at `from`.
-                let original = if promote {
-                    placed.unpromote()
-                } else {
-                    placed
-                };
+                let original = if promote { placed.unpromote() } else { placed };
                 self.position.set_piece(from, original);
                 self.position.clear_square(to);
 
@@ -298,17 +308,22 @@ impl GameState {
                         .expect("captured piece must have valid hand type");
                     let cur_count = self.position.hand_count(mover_color, hand_type);
                     debug_assert!(cur_count > 0, "unmake_move: hand count already 0");
-                    self.position.set_hand_count(mover_color, hand_type, cur_count - 1);
+                    self.position
+                        .set_hand_count(mover_color, hand_type, cur_count - 1);
                 }
             }
 
-            Move::Drop { to, piece_type: hpt } => {
+            Move::Drop {
+                to,
+                piece_type: hpt,
+            } => {
                 // Remove dropped piece from board.
                 self.position.clear_square(to);
 
                 // Restore hand count.
                 let cur_count = self.position.hand_count(mover_color, hpt);
-                self.position.set_hand_count(mover_color, hpt, cur_count + 1);
+                self.position
+                    .set_hand_count(mover_color, hpt, cur_count + 1);
             }
         }
 
@@ -348,7 +363,11 @@ impl GameState {
         let mut legal = Vec::with_capacity(candidates.len());
         for mv in candidates {
             // Nifu and uchi-fu-zume checks for pawn drops.
-            if let Move::Drop { to, piece_type: HandPieceType::Pawn } = mv {
+            if let Move::Drop {
+                to,
+                piece_type: HandPieceType::Pawn,
+            } = mv
+            {
                 if self.pawn_columns[color as usize][to.col() as usize] {
                     continue; // Already have an unpromoted pawn on this column.
                 }
@@ -401,7 +420,11 @@ impl GameState {
 
         for mv in candidates {
             // Nifu and uchi-fu-zume checks for pawn drops.
-            if let Move::Drop { to, piece_type: HandPieceType::Pawn } = mv {
+            if let Move::Drop {
+                to,
+                piece_type: HandPieceType::Pawn,
+            } = mv
+            {
                 if self.pawn_columns[color as usize][to.col() as usize] {
                     continue;
                 }
@@ -430,11 +453,7 @@ impl GameState {
     ///
     /// Sets `mask[encode_fn(mv)] = true` for every legal move `mv`.
     /// Fills the rest of the mask with `false` first.
-    pub fn write_legal_mask_into(
-        &mut self,
-        mask: &mut [bool],
-        encode_fn: &dyn Fn(Move) -> usize,
-    ) {
+    pub fn write_legal_mask_into(&mut self, mask: &mut [bool], encode_fn: &dyn Fn(Move) -> usize) {
         mask.fill(false);
         let mut move_list = MoveList::new();
         self.generate_legal_moves_into(&mut move_list);
@@ -509,12 +528,12 @@ impl GameState {
             let sq = Square::from_row_col(row, col).unwrap();
             if let Some(piece) = self.position.piece_at(sq)
                 && piece.color() == color
-                    && piece.piece_type() == PieceType::Pawn
-                    && !piece.is_promoted()
-                {
-                    self.pawn_columns[color_idx][col_idx] = true;
-                    return;
-                }
+                && piece.piece_type() == PieceType::Pawn
+                && !piece.is_promoted()
+            {
+                self.pawn_columns[color_idx][col_idx] = true;
+                return;
+            }
         }
     }
 }
@@ -654,7 +673,10 @@ mod tests {
         pos.hash = pos.compute_hash();
 
         let gs = GameState::from_position(pos, 500);
-        assert!(gs.is_in_check(), "Black king should be in check from White rook");
+        assert!(
+            gs.is_in_check(),
+            "Black king should be in check from White rook"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -735,7 +757,11 @@ mod tests {
         let nifu_drops: Vec<_> = moves
             .iter()
             .filter(|m| {
-                if let Move::Drop { to, piece_type: HandPieceType::Pawn } = m {
+                if let Move::Drop {
+                    to,
+                    piece_type: HandPieceType::Pawn,
+                } = m
+                {
                     to.col() == 4
                 } else {
                     false
@@ -753,7 +779,11 @@ mod tests {
         let other_col_drops: Vec<_> = moves
             .iter()
             .filter(|m| {
-                if let Move::Drop { to, piece_type: HandPieceType::Pawn } = m {
+                if let Move::Drop {
+                    to,
+                    piece_type: HandPieceType::Pawn,
+                } = m
+                {
                     to.col() != 4
                 } else {
                     false
@@ -837,7 +867,9 @@ mod tests {
         gs.check_termination();
         assert_eq!(
             gs.result,
-            GameResult::Checkmate { winner: Color::White },
+            GameResult::Checkmate {
+                winner: Color::White
+            },
             "Black should be checkmated"
         );
     }
@@ -924,7 +956,10 @@ mod tests {
         let mut gs = GameState::from_position(pos, 500);
 
         // Verify no bishop in hand initially
-        assert_eq!(gs.position.hand_count(Color::Black, HandPieceType::Bishop), 0);
+        assert_eq!(
+            gs.position.hand_count(Color::Black, HandPieceType::Bishop),
+            0
+        );
 
         // Black rook captures promoted bishop
         let capture = Move::Board {
@@ -1109,7 +1144,9 @@ mod tests {
         gs.check_termination();
         assert_eq!(
             gs.result,
-            GameResult::Checkmate { winner: Color::White },
+            GameResult::Checkmate {
+                winner: Color::White
+            },
             "Stalemate should result in loss for the player without moves"
         );
     }
@@ -1137,7 +1174,8 @@ mod tests {
             // Verify hash
             let recomputed_hash = gs.position.compute_hash();
             assert_eq!(
-                gs.position.hash, recomputed_hash,
+                gs.position.hash,
+                recomputed_hash,
                 "Hash mismatch at ply {} after {:?}",
                 ply + 1,
                 mv
@@ -1146,7 +1184,8 @@ mod tests {
             // Verify attack map
             let recomputed_map = compute_attack_map(&gs.position);
             assert_eq!(
-                gs.attack_map, recomputed_map,
+                gs.attack_map,
+                recomputed_map,
                 "Attack map mismatch at ply {} after {:?}",
                 ply + 1,
                 mv
@@ -1172,9 +1211,7 @@ mod tests {
                 Move::Board { from, to, promote } => {
                     from.index() * 162 + to.index() * 2 + if promote { 1 } else { 0 }
                 }
-                Move::Drop { to, piece_type } => {
-                    81 * 162 + to.index() * 7 + piece_type.index()
-                }
+                Move::Drop { to, piece_type } => 81 * 162 + to.index() * 7 + piece_type.index(),
             }
         };
 
@@ -1193,7 +1230,11 @@ mod tests {
         let legal = gs.legal_moves();
         for mv in &legal {
             let idx = encode_fn(*mv);
-            assert!(mask[idx], "Legal move {:?} not set in mask at index {}", mv, idx);
+            assert!(
+                mask[idx],
+                "Legal move {:?} not set in mask at index {}",
+                mv, idx
+            );
         }
     }
 
@@ -1571,13 +1612,21 @@ mod tests {
         assert_eq!(orig_hand, 0);
 
         // Capture
-        let capture = Move::Board { from: rook_sq, to: pawn_sq, promote: false };
+        let capture = Move::Board {
+            from: rook_sq,
+            to: pawn_sq,
+            promote: false,
+        };
         let undo = gs.make_move(capture);
 
         // After capture: pawn gone, rook at pawn_sq, pawn in hand
-        assert!(gs.position.piece_at(rook_sq).is_none(), "rook should have left from-square");
+        assert!(
+            gs.position.piece_at(rook_sq).is_none(),
+            "rook should have left from-square"
+        );
         assert_eq!(
-            gs.position.hand_count(Color::Black, HandPieceType::Pawn), 1,
+            gs.position.hand_count(Color::Black, HandPieceType::Pawn),
+            1,
             "Black should have 1 pawn in hand after capture"
         );
 
@@ -1586,15 +1635,18 @@ mod tests {
 
         // After unmake: everything restored
         assert_eq!(
-            gs.position.piece_at(rook_sq), orig_rook,
+            gs.position.piece_at(rook_sq),
+            orig_rook,
             "Rook should be back at original square"
         );
         assert_eq!(
-            gs.position.piece_at(pawn_sq), orig_pawn,
+            gs.position.piece_at(pawn_sq),
+            orig_pawn,
             "Captured pawn should be restored"
         );
         assert_eq!(
-            gs.position.hand_count(Color::Black, HandPieceType::Pawn), 0,
+            gs.position.hand_count(Color::Black, HandPieceType::Pawn),
+            0,
             "Hand count should be restored to 0 after unmake"
         );
         assert_eq!(
@@ -1621,35 +1673,51 @@ mod tests {
         let pawn_sq = Square::from_row_col(1, 3).unwrap();
         let silver_sq = Square::from_row_col(0, 4).unwrap();
         pos.set_piece(pawn_sq, Piece::new(PieceType::Pawn, Color::Black, false));
-        pos.set_piece(silver_sq, Piece::new(PieceType::Silver, Color::White, false));
+        pos.set_piece(
+            silver_sq,
+            Piece::new(PieceType::Silver, Color::White, false),
+        );
         pos.current_player = Color::Black;
         pos.hash = pos.compute_hash();
 
         let mut gs = GameState::from_position(pos, 500);
         let orig_hash = gs.position.hash;
 
-        let capture = Move::Board { from: pawn_sq, to: silver_sq, promote: true };
+        let capture = Move::Board {
+            from: pawn_sq,
+            to: silver_sq,
+            promote: true,
+        };
         let undo = gs.make_move(capture);
 
         // After: promoted pawn (Tokin) at silver_sq, silver in hand
         let placed = gs.position.piece_at(silver_sq).unwrap();
         assert!(placed.is_promoted(), "Pawn should be promoted after move");
         assert_eq!(placed.piece_type(), PieceType::Pawn);
-        assert_eq!(gs.position.hand_count(Color::Black, HandPieceType::Silver), 1);
+        assert_eq!(
+            gs.position.hand_count(Color::Black, HandPieceType::Silver),
+            1
+        );
 
         // Unmake
         gs.unmake_move(capture, undo);
 
         // After unmake: unpromoted pawn at pawn_sq, silver at silver_sq, hand empty
         let restored_pawn = gs.position.piece_at(pawn_sq).unwrap();
-        assert!(!restored_pawn.is_promoted(), "Pawn should be unpromoted after unmake");
+        assert!(
+            !restored_pawn.is_promoted(),
+            "Pawn should be unpromoted after unmake"
+        );
         assert_eq!(restored_pawn.piece_type(), PieceType::Pawn);
 
         let restored_silver = gs.position.piece_at(silver_sq).unwrap();
         assert_eq!(restored_silver.piece_type(), PieceType::Silver);
         assert_eq!(restored_silver.color(), Color::White);
 
-        assert_eq!(gs.position.hand_count(Color::Black, HandPieceType::Silver), 0);
+        assert_eq!(
+            gs.position.hand_count(Color::Black, HandPieceType::Silver),
+            0
+        );
         assert_eq!(gs.position.hash, orig_hash, "Hash should be restored");
     }
 
@@ -1733,21 +1801,36 @@ mod tests {
 
         // Verify the drop took effect
         assert_eq!(
-            gs.position.hand_count(Color::Black, HandPieceType::Gold), 1,
+            gs.position.hand_count(Color::Black, HandPieceType::Gold),
+            1,
             "Hand count should decrease after drop"
         );
         assert!(
-            gs.position.piece_at(Square::from_row_col(4, 4).unwrap()).is_some(),
+            gs.position
+                .piece_at(Square::from_row_col(4, 4).unwrap())
+                .is_some(),
             "Dropped piece should be on the board"
         );
 
         // Unmake
         gs.unmake_move(drop_mv, undo);
 
-        assert_eq!(gs.position.hash, original_hash, "Hash not restored after drop+unmake");
-        assert_eq!(gs.position.board, original_board, "Board not restored after drop+unmake");
-        assert_eq!(gs.position.hands, original_hands, "Hands not restored after drop+unmake");
-        assert_eq!(gs.pawn_columns, original_pawn_cols, "pawn_columns not restored after drop+unmake");
+        assert_eq!(
+            gs.position.hash, original_hash,
+            "Hash not restored after drop+unmake"
+        );
+        assert_eq!(
+            gs.position.board, original_board,
+            "Board not restored after drop+unmake"
+        );
+        assert_eq!(
+            gs.position.hands, original_hands,
+            "Hands not restored after drop+unmake"
+        );
+        assert_eq!(
+            gs.pawn_columns, original_pawn_cols,
+            "pawn_columns not restored after drop+unmake"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1812,7 +1895,10 @@ mod tests {
 
         // Calling again should return the same result
         gs.check_termination();
-        assert_eq!(gs.result, first_result, "check_termination should be idempotent");
+        assert_eq!(
+            gs.result, first_result,
+            "check_termination should be idempotent"
+        );
     }
 
     #[test]
@@ -1848,7 +1934,10 @@ mod tests {
         assert!(first.is_terminal());
 
         gs.check_termination();
-        assert_eq!(gs.result, first, "check_termination should be idempotent for checkmate");
+        assert_eq!(
+            gs.result, first,
+            "check_termination should be idempotent for checkmate"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1875,9 +1964,18 @@ mod tests {
         );
 
         let cols = compute_pawn_columns(&pos);
-        assert!(cols[Color::Black as usize][3], "Black should have pawn on col 3");
-        assert!(!cols[Color::Black as usize][5], "Promoted pawn should NOT count for nifu");
-        assert!(cols[Color::White as usize][7], "White should have pawn on col 7");
+        assert!(
+            cols[Color::Black as usize][3],
+            "Black should have pawn on col 3"
+        );
+        assert!(
+            !cols[Color::Black as usize][5],
+            "Promoted pawn should NOT count for nifu"
+        );
+        assert!(
+            cols[Color::White as usize][7],
+            "White should have pawn on col 7"
+        );
         assert!(!cols[Color::White as usize][0], "No pawn on col 0");
     }
 
@@ -1945,17 +2043,26 @@ mod tests {
             "White king should be in check from dropped rook"
         );
         // Rook should be off hand
-        assert_eq!(
-            gs.position.hand_count(Color::Black, HandPieceType::Rook),
-            0
-        );
+        assert_eq!(gs.position.hand_count(Color::Black, HandPieceType::Rook), 0);
 
         gs.unmake_move(drop_move, undo);
 
-        assert_eq!(gs.position.hash, original_hash, "hash not restored after unmake drop-with-check");
-        assert_eq!(gs.position.board, original_board, "board not restored after unmake drop-with-check");
-        assert_eq!(gs.position.hands, original_hands, "hands not restored after unmake drop-with-check");
-        assert_eq!(gs.attack_map, original_attack_map, "attack map not restored after unmake drop-with-check");
+        assert_eq!(
+            gs.position.hash, original_hash,
+            "hash not restored after unmake drop-with-check"
+        );
+        assert_eq!(
+            gs.position.board, original_board,
+            "board not restored after unmake drop-with-check"
+        );
+        assert_eq!(
+            gs.position.hands, original_hands,
+            "hands not restored after unmake drop-with-check"
+        );
+        assert_eq!(
+            gs.attack_map, original_attack_map,
+            "attack map not restored after unmake drop-with-check"
+        );
     }
 
     /// Drop a gold that delivers check, then unmake. Tests a non-sliding drop.
@@ -1987,7 +2094,10 @@ mod tests {
         };
 
         let undo = gs.make_move(drop_move);
-        assert!(gs.is_in_check(), "White king should be in check from dropped gold");
+        assert!(
+            gs.is_in_check(),
+            "White king should be in check from dropped gold"
+        );
 
         gs.unmake_move(drop_move, undo);
 
@@ -2096,7 +2206,9 @@ mod tests {
         gs.check_termination();
         assert_eq!(
             gs.result,
-            GameResult::Checkmate { winner: Color::Black },
+            GameResult::Checkmate {
+                winner: Color::Black
+            },
             "Stalemate should result in loss for the player without moves (White loses)"
         );
     }
@@ -2142,10 +2254,16 @@ mod tests {
         let result_first = gs.result;
 
         gs.check_termination();
-        assert_eq!(gs.result, result_first, "check_termination should be idempotent on stalemate");
+        assert_eq!(
+            gs.result, result_first,
+            "check_termination should be idempotent on stalemate"
+        );
 
         gs.check_termination();
-        assert_eq!(gs.result, result_first, "check_termination should be idempotent on third call");
+        assert_eq!(
+            gs.result, result_first,
+            "check_termination should be idempotent on third call"
+        );
     }
 
     // ===================================================================
@@ -2184,8 +2302,7 @@ mod tests {
                 assert_eq!(
                     gs.position.hash, recomputed_hash,
                     "Hash mismatch in game {} at ply {}",
-                    seed,
-                    gs.ply
+                    seed, gs.ply
                 );
 
                 // Verify attack map
@@ -2193,8 +2310,7 @@ mod tests {
                 assert_eq!(
                     gs.attack_map, recomputed_map,
                     "Attack map mismatch in game {} at ply {}",
-                    seed,
-                    gs.ply
+                    seed, gs.ply
                 );
 
                 // Verify pawn columns
@@ -2202,8 +2318,7 @@ mod tests {
                 assert_eq!(
                     gs.pawn_columns, recomputed_pawn_cols,
                     "Pawn columns mismatch in game {} at ply {}",
-                    seed,
-                    gs.ply
+                    seed, gs.ply
                 );
             }
         }
@@ -2238,8 +2353,14 @@ mod tests {
             gs.unmake_move(mv, undo);
         }
 
-        assert_eq!(gs.position.hash, original_hash, "hash not restored after full unmake stack");
-        assert_eq!(gs.position.board, original_board, "board not restored after full unmake stack");
+        assert_eq!(
+            gs.position.hash, original_hash,
+            "hash not restored after full unmake stack"
+        );
+        assert_eq!(
+            gs.position.board, original_board,
+            "board not restored after full unmake stack"
+        );
         assert_eq!(gs.ply, 0, "ply should be 0 after full unmake");
     }
 }

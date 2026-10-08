@@ -1,30 +1,30 @@
-use pyo3::prelude::*;
-use pyo3::Py;
 use numpy::{PyArray1, PyArray2, PyArray4};
+use pyo3::Py;
+use pyo3::prelude::*;
 use shogi_core::GameResult;
 
 /// Codes indicating why an episode terminated.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy)]
 pub enum TerminationReason {
-    NotTerminated  = 0,
-    Checkmate      = 1,
-    Repetition     = 2,
+    NotTerminated = 0,
+    Checkmate = 1,
+    Repetition = 2,
     PerpetualCheck = 3,
-    Impasse        = 4,
-    MaxMoves       = 5,
+    Impasse = 4,
+    MaxMoves = 5,
 }
 
 impl TerminationReason {
     /// Map a `shogi_core::GameResult` to a `TerminationReason` code.
     pub fn from_game_result(result: GameResult) -> Self {
         match result {
-            GameResult::InProgress                 => TerminationReason::NotTerminated,
-            GameResult::Checkmate { .. }           => TerminationReason::Checkmate,
-            GameResult::Repetition                 => TerminationReason::Repetition,
-            GameResult::PerpetualCheck { .. }      => TerminationReason::PerpetualCheck,
-            GameResult::Impasse { .. }             => TerminationReason::Impasse,
-            GameResult::MaxMoves                   => TerminationReason::MaxMoves,
+            GameResult::InProgress => TerminationReason::NotTerminated,
+            GameResult::Checkmate { .. } => TerminationReason::Checkmate,
+            GameResult::Repetition => TerminationReason::Repetition,
+            GameResult::PerpetualCheck { .. } => TerminationReason::PerpetualCheck,
+            GameResult::Impasse { .. } => TerminationReason::Impasse,
+            GameResult::MaxMoves => TerminationReason::MaxMoves,
         }
     }
 }

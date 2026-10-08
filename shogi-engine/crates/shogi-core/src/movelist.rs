@@ -75,12 +75,7 @@ impl MoveList {
     #[inline]
     pub fn as_slice(&self) -> &[Move] {
         // SAFETY: moves[0..len] are all initialized by `push`.
-        unsafe {
-            std::slice::from_raw_parts(
-                self.moves.as_ptr() as *const Move,
-                self.len,
-            )
-        }
+        unsafe { std::slice::from_raw_parts(self.moves.as_ptr() as *const Move, self.len) }
     }
 
     /// Iterate over the stored moves.
@@ -180,19 +175,25 @@ mod tests {
 
         // Verify first and last elements
         let first = ml.get(0);
-        assert_eq!(first, Move::Board {
-            from: Square::new_unchecked(0),
-            to: Square::new_unchecked(1),
-            promote: true,
-        });
+        assert_eq!(
+            first,
+            Move::Board {
+                from: Square::new_unchecked(0),
+                to: Square::new_unchecked(1),
+                promote: true,
+            }
+        );
 
         let last = ml.get(MOVELIST_CAPACITY - 1);
         let last_i = MOVELIST_CAPACITY - 1;
-        assert_eq!(last, Move::Board {
-            from: Square::new_unchecked((last_i % 80) as u8),
-            to: Square::new_unchecked(((last_i % 80) + 1) as u8),
-            promote: last_i % 2 == 0,
-        });
+        assert_eq!(
+            last,
+            Move::Board {
+                from: Square::new_unchecked((last_i % 80) as u8),
+                to: Square::new_unchecked(((last_i % 80) + 1) as u8),
+                promote: last_i.is_multiple_of(2),
+            }
+        );
     }
 
     /// Verify that iter() returns all pushed elements.

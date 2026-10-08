@@ -234,7 +234,11 @@ mod tests {
         <DefaultActionMapper as ActionMapper>::encode(m, mv, perspective).unwrap()
     }
 
-    fn trait_decode(m: &DefaultActionMapper, idx: usize, perspective: Color) -> Result<Move, String> {
+    fn trait_decode(
+        m: &DefaultActionMapper,
+        idx: usize,
+        perspective: Color,
+    ) -> Result<Move, String> {
         <DefaultActionMapper as ActionMapper>::decode(m, idx, perspective)
     }
 
@@ -242,7 +246,10 @@ mod tests {
     fn test_action_space_size() {
         assert_eq!(ACTION_SPACE_SIZE, 13_527);
         let m = mapper();
-        assert_eq!(<DefaultActionMapper as ActionMapper>::action_space_size(&m), 13_527);
+        assert_eq!(
+            <DefaultActionMapper as ActionMapper>::action_space_size(&m),
+            13_527
+        );
     }
 
     #[test]
@@ -287,7 +294,7 @@ mod tests {
                 let mv = Move::Drop { to, piece_type };
                 let idx = trait_encode(&m, mv, perspective);
                 assert!(
-                    idx >= BOARD_MOVE_COUNT && idx < ACTION_SPACE_SIZE,
+                    (BOARD_MOVE_COUNT..ACTION_SPACE_SIZE).contains(&idx),
                     "idx={idx} should be in drop range"
                 );
                 let decoded = trait_decode(&m, idx, perspective).expect("decode failed");
@@ -317,7 +324,10 @@ mod tests {
                     let idx = trait_encode(&m, mv, perspective);
 
                     assert!(idx < BOARD_MOVE_COUNT, "idx={idx} out of board range");
-                    assert!(seen.insert(idx), "duplicate index {idx} for from={from_idx} to={to_idx} promote={promote}");
+                    assert!(
+                        seen.insert(idx),
+                        "duplicate index {idx} for from={from_idx} to={to_idx} promote={promote}"
+                    );
 
                     let decoded = trait_decode(&m, idx, perspective).expect("decode failed");
                     assert_eq!(decoded, mv, "roundtrip failed");
@@ -325,7 +335,11 @@ mod tests {
             }
         }
 
-        assert_eq!(seen.len(), BOARD_MOVE_COUNT, "not all board indices covered");
+        assert_eq!(
+            seen.len(),
+            BOARD_MOVE_COUNT,
+            "not all board indices covered"
+        );
     }
 
     #[test]
@@ -341,7 +355,7 @@ mod tests {
                 let idx = trait_encode(&m, mv, perspective);
 
                 assert!(
-                    idx >= BOARD_MOVE_COUNT && idx < ACTION_SPACE_SIZE,
+                    (BOARD_MOVE_COUNT..ACTION_SPACE_SIZE).contains(&idx),
                     "idx={idx} out of drop range"
                 );
                 assert!(
@@ -364,7 +378,11 @@ mod tests {
         // A physical board move: from=20, to=30, no promote
         let from = Square::new_unchecked(20);
         let to = Square::new_unchecked(30);
-        let mv = Move::Board { from, to, promote: false };
+        let mv = Move::Board {
+            from,
+            to,
+            promote: false,
+        };
 
         // The same physical move encoded from Black's and White's perspectives
         // should produce DIFFERENT indices (each sees the board from their side),
@@ -380,13 +398,13 @@ mod tests {
         );
 
         // Roundtrip from White perspective
-        let decoded_white = trait_decode(&m, idx_white, Color::White)
-            .expect("decode from White failed");
+        let decoded_white =
+            trait_decode(&m, idx_white, Color::White).expect("decode from White failed");
         assert_eq!(decoded_white, mv, "White perspective roundtrip failed");
 
         // Cross-check: Black's index decoded from Black gives back the original move
-        let decoded_black = trait_decode(&m, idx_black, Color::Black)
-            .expect("decode from Black failed");
+        let decoded_black =
+            trait_decode(&m, idx_black, Color::Black).expect("decode from Black failed");
         assert_eq!(decoded_black, mv, "Black perspective roundtrip failed");
     }
 
@@ -395,7 +413,10 @@ mod tests {
         let m = mapper();
 
         let to = Square::new_unchecked(10);
-        let mv = Move::Drop { to, piece_type: HandPieceType::Rook };
+        let mv = Move::Drop {
+            to,
+            piece_type: HandPieceType::Rook,
+        };
 
         let idx_black = trait_encode(&m, mv, Color::Black);
         let idx_white = trait_encode(&m, mv, Color::White);
@@ -428,23 +449,43 @@ mod tests {
 
         for from_idx in 0u8..81 {
             for to_idx in 0u8..81 {
-                if from_idx == to_idx { continue; }
+                if from_idx == to_idx {
+                    continue;
+                }
                 for promote in [false, true] {
                     let mv = Move::Board {
                         from: Square::new_unchecked(from_idx),
                         to: Square::new_unchecked(to_idx),
                         promote,
                     };
-                    let encoded = <DefaultActionMapper as ActionMapper>::encode(&mapper, mv, perspective).unwrap();
-                    assert!(encoded < BOARD_MOVE_COUNT, "index {} out of board range", encoded);
-                    assert!(!seen[encoded], "collision at index {} (white perspective)", encoded);
+                    let encoded =
+                        <DefaultActionMapper as ActionMapper>::encode(&mapper, mv, perspective)
+                            .unwrap();
+                    assert!(
+                        encoded < BOARD_MOVE_COUNT,
+                        "index {} out of board range",
+                        encoded
+                    );
+                    assert!(
+                        !seen[encoded],
+                        "collision at index {} (white perspective)",
+                        encoded
+                    );
                     seen[encoded] = true;
-                    let decoded = <DefaultActionMapper as ActionMapper>::decode(&mapper, encoded, perspective).unwrap();
+                    let decoded = <DefaultActionMapper as ActionMapper>::decode(
+                        &mapper,
+                        encoded,
+                        perspective,
+                    )
+                    .unwrap();
                     assert_eq!(decoded, mv, "white perspective roundtrip failed");
                 }
             }
         }
-        assert!(seen.iter().all(|&v| v), "not all board indices covered (white)");
+        assert!(
+            seen.iter().all(|&v| v),
+            "not all board indices covered (white)"
+        );
     }
 
     /// Exhaustive drop move roundtrip under White perspective with collision check.
@@ -461,7 +502,7 @@ mod tests {
                 let idx = trait_encode(&m, mv, perspective);
 
                 assert!(
-                    idx >= BOARD_MOVE_COUNT && idx < ACTION_SPACE_SIZE,
+                    (BOARD_MOVE_COUNT..ACTION_SPACE_SIZE).contains(&idx),
                     "idx={idx} out of drop range (white perspective)"
                 );
                 assert!(
@@ -477,7 +518,11 @@ mod tests {
             }
         }
 
-        assert_eq!(seen.len(), DROP_MOVE_COUNT, "not all drop indices covered (white)");
+        assert_eq!(
+            seen.len(),
+            DROP_MOVE_COUNT,
+            "not all drop indices covered (white)"
+        );
     }
 
     // ===================================================================
@@ -491,27 +536,42 @@ mod tests {
         // Last valid board move index
         let last_board = BOARD_MOVE_COUNT - 1;
         let result = trait_decode(&m, last_board, Color::Black);
-        assert!(result.is_ok(), "last board index should decode successfully");
+        assert!(
+            result.is_ok(),
+            "last board index should decode successfully"
+        );
         if let Ok(Move::Board { .. }) = result {
             // good
         } else {
-            panic!("last board index should decode to a Board move, got {:?}", result);
+            panic!(
+                "last board index should decode to a Board move, got {:?}",
+                result
+            );
         }
 
         // First drop index
         let first_drop = BOARD_MOVE_COUNT;
         let result = trait_decode(&m, first_drop, Color::Black);
-        assert!(result.is_ok(), "first drop index should decode successfully");
+        assert!(
+            result.is_ok(),
+            "first drop index should decode successfully"
+        );
         if let Ok(Move::Drop { .. }) = result {
             // good
         } else {
-            panic!("first drop index should decode to a Drop move, got {:?}", result);
+            panic!(
+                "first drop index should decode to a Drop move, got {:?}",
+                result
+            );
         }
 
         // Last valid drop index
         let last_drop = ACTION_SPACE_SIZE - 1;
         let result = trait_decode(&m, last_drop, Color::Black);
-        assert!(result.is_ok(), "last valid index should decode successfully");
+        assert!(
+            result.is_ok(),
+            "last valid index should decode successfully"
+        );
     }
 
     /// Encode then decode preserves the original move for all piece types at boundary squares.
@@ -531,7 +591,10 @@ mod tests {
                     let mv = Move::Board { from, to, promote };
                     let idx = trait_encode(&m, mv, Color::Black);
                     let decoded = trait_decode(&m, idx, Color::Black).unwrap();
-                    assert_eq!(decoded, mv, "corner roundtrip failed: from={from_idx} to={to_idx} promote={promote}");
+                    assert_eq!(
+                        decoded, mv,
+                        "corner roundtrip failed: from={from_idx} to={to_idx} promote={promote}"
+                    );
                 }
             }
         }
@@ -543,7 +606,12 @@ mod tests {
         let m = mapper();
         for idx in 0..ACTION_SPACE_SIZE {
             let result = trait_decode(&m, idx, Color::Black);
-            assert!(result.is_ok(), "index {} should decode successfully, got {:?}", idx, result);
+            assert!(
+                result.is_ok(),
+                "index {} should decode successfully, got {:?}",
+                idx,
+                result
+            );
         }
     }
 }

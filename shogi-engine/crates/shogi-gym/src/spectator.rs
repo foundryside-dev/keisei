@@ -3,9 +3,11 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 use shogi_core::GameState;
 
-use crate::action_mapper::{ActionMapper, DefaultActionMapper, ACTION_SPACE_SIZE};
-use crate::observation::{DefaultObservationGenerator, ObservationGenerator, BUFFER_LEN, NUM_CHANNELS};
-use crate::spatial_action_mapper::{SpatialActionMapper, SPATIAL_ACTION_SPACE_SIZE};
+use crate::action_mapper::{ACTION_SPACE_SIZE, ActionMapper, DefaultActionMapper};
+use crate::observation::{
+    BUFFER_LEN, DefaultObservationGenerator, NUM_CHANNELS, ObservationGenerator,
+};
+use crate::spatial_action_mapper::{SPATIAL_ACTION_SPACE_SIZE, SpatialActionMapper};
 use crate::spectator_data::{build_spectator_dict, color_name, move_notation, move_usi};
 
 // ---------------------------------------------------------------------------
@@ -25,17 +27,33 @@ impl SpectatorActionMode {
         }
     }
 
-    fn encode(&self, mv: shogi_core::Move, perspective: shogi_core::Color) -> Result<usize, String> {
+    fn encode(
+        &self,
+        mv: shogi_core::Move,
+        perspective: shogi_core::Color,
+    ) -> Result<usize, String> {
         match self {
-            SpectatorActionMode::Default(m) => <DefaultActionMapper as ActionMapper>::encode(m, mv, perspective),
-            SpectatorActionMode::Spatial(m) => <SpatialActionMapper as ActionMapper>::encode(m, mv, perspective),
+            SpectatorActionMode::Default(m) => {
+                <DefaultActionMapper as ActionMapper>::encode(m, mv, perspective)
+            }
+            SpectatorActionMode::Spatial(m) => {
+                <SpatialActionMapper as ActionMapper>::encode(m, mv, perspective)
+            }
         }
     }
 
-    fn decode(&self, idx: usize, perspective: shogi_core::Color) -> Result<shogi_core::Move, String> {
+    fn decode(
+        &self,
+        idx: usize,
+        perspective: shogi_core::Color,
+    ) -> Result<shogi_core::Move, String> {
         match self {
-            SpectatorActionMode::Default(m) => <DefaultActionMapper as ActionMapper>::decode(m, idx, perspective),
-            SpectatorActionMode::Spatial(m) => <SpatialActionMapper as ActionMapper>::decode(m, idx, perspective),
+            SpectatorActionMode::Default(m) => {
+                <DefaultActionMapper as ActionMapper>::decode(m, idx, perspective)
+            }
+            SpectatorActionMode::Spatial(m) => {
+                <SpatialActionMapper as ActionMapper>::decode(m, idx, perspective)
+            }
         }
     }
 }
@@ -57,7 +75,7 @@ pub struct SpectatorEnv {
     max_ply: u32,
     mapper: SpectatorActionMode,
     obs_gen: DefaultObservationGenerator,
-    move_history: Vec<(usize, String)>,  // (action_index, move_notation)
+    move_history: Vec<(usize, String)>, // (action_index, move_notation)
 }
 
 #[pymethods]
@@ -73,9 +91,12 @@ impl SpectatorEnv {
         let mapper = match action_mode {
             "default" => SpectatorActionMode::Default(DefaultActionMapper),
             "spatial" => SpectatorActionMode::Spatial(SpatialActionMapper::new()),
-            other => return Err(pyo3::exceptions::PyValueError::new_err(
-                format!("Unknown action_mode '{}'. Valid: 'default', 'spatial'", other)
-            )),
+            other => {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "Unknown action_mode '{}'. Valid: 'default', 'spatial'",
+                    other
+                )));
+            }
         };
         Ok(SpectatorEnv {
             game: GameState::with_max_ply(max_ply),
@@ -100,9 +121,12 @@ impl SpectatorEnv {
         let mapper = match action_mode {
             "default" => SpectatorActionMode::Default(DefaultActionMapper),
             "spatial" => SpectatorActionMode::Spatial(SpatialActionMapper::new()),
-            other => return Err(pyo3::exceptions::PyValueError::new_err(
-                format!("Unknown action_mode '{}'. Valid: 'default', 'spatial'", other)
-            )),
+            other => {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "Unknown action_mode '{}'. Valid: 'default', 'spatial'",
+                    other
+                )));
+            }
         };
         let game = GameState::from_sfen(sfen, max_ply)
             .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("invalid SFEN: {e}")))?;
@@ -134,7 +158,9 @@ impl SpectatorEnv {
         }
 
         let perspective = self.game.position.current_player;
-        let mv = self.mapper.decode(action, perspective)
+        let mv = self
+            .mapper
+            .decode(action, perspective)
             .map_err(pyo3::exceptions::PyValueError::new_err)?;
         let legal_moves = self.game.legal_moves();
         if !legal_moves.contains(&mv) {
@@ -208,8 +234,11 @@ impl SpectatorEnv {
         let moves = self.game.legal_moves();
         moves
             .into_iter()
-            .map(|mv| self.mapper.encode(mv, perspective)
-                .expect("legal move must be encodable"))
+            .map(|mv| {
+                self.mapper
+                    .encode(mv, perspective)
+                    .expect("legal move must be encodable")
+            })
             .collect()
     }
 
@@ -227,7 +256,9 @@ impl SpectatorEnv {
         moves
             .into_iter()
             .map(|mv| {
-                let idx = self.mapper.encode(mv, perspective)
+                let idx = self
+                    .mapper
+                    .encode(mv, perspective)
                     .expect("legal move must be encodable");
                 (idx, move_usi(mv))
             })
@@ -370,7 +401,11 @@ mod tests {
         let pairs = env.legal_moves_with_usi();
 
         assert_eq!(actions.len(), 30, "Startpos should have 30 legal actions");
-        assert_eq!(pairs.len(), 30, "legal_moves_with_usi should also yield 30 entries");
+        assert_eq!(
+            pairs.len(),
+            30,
+            "legal_moves_with_usi should also yield 30 entries"
+        );
         assert_eq!(actions.len(), pairs.len(), "lengths must match");
 
         for (i, (a, (idx, usi))) in actions.iter().zip(pairs.iter()).enumerate() {
@@ -379,7 +414,11 @@ mod tests {
                 "action index mismatch at position {}: legal_actions={}, legal_moves_with_usi={}",
                 i, a, idx
             );
-            assert!(!usi.is_empty(), "USI string at position {} must be non-empty", i);
+            assert!(
+                !usi.is_empty(),
+                "USI string at position {} must be non-empty",
+                i
+            );
             assert_eq!(
                 usi.len(),
                 4,
@@ -422,7 +461,9 @@ mod tests {
         // Use max_ply=0 to immediately end the game
         let mut game = GameState::with_max_ply(0);
         game.check_termination();
-        assert!(game.result.is_terminal(), "Game with max_ply=0 should be over");
+        assert!(
+            game.result.is_terminal(),
+            "Game with max_ply=0 should be over"
+        );
     }
-
 }

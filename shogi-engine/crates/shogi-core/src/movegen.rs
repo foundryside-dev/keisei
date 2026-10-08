@@ -90,19 +90,39 @@ fn add_board_move_with_promotion(
 
     // Already-promoted pieces and Gold/King: no promotion logic.
     if already_promoted || !piece_type.can_promote() {
-        moves.push(Move::Board { from, to, promote: false });
+        moves.push(Move::Board {
+            from,
+            to,
+            promote: false,
+        });
         return;
     }
 
     // Unpromoted, promotable piece.
     if must_promote(piece_type, to_row, color) {
-        moves.push(Move::Board { from, to, promote: true });
+        moves.push(Move::Board {
+            from,
+            to,
+            promote: true,
+        });
     } else if in_promotion_zone(from_row, color) || in_promotion_zone(to_row, color) {
         // Optional promotion — emit both choices.
-        moves.push(Move::Board { from, to, promote: false });
-        moves.push(Move::Board { from, to, promote: true });
+        moves.push(Move::Board {
+            from,
+            to,
+            promote: false,
+        });
+        moves.push(Move::Board {
+            from,
+            to,
+            promote: true,
+        });
     } else {
-        moves.push(Move::Board { from, to, promote: false });
+        moves.push(Move::Board {
+            from,
+            to,
+            promote: false,
+        });
     }
 }
 
@@ -129,9 +149,10 @@ pub fn generate_pseudo_legal_board_moves(pos: &Position, color: Color, moves: &m
             for to in compute_knight_attacks(from, color) {
                 // Skip squares occupied by own pieces.
                 if let Some(target_piece) = pos.piece_at(to)
-                    && target_piece.color() == color {
-                        continue;
-                    }
+                    && target_piece.color() == color
+                {
+                    continue;
+                }
                 add_board_move_with_promotion(from, to, pt, promoted, color, moves);
             }
             continue;
@@ -150,9 +171,10 @@ pub fn generate_pseudo_legal_board_moves(pos: &Position, color: Color, moves: &m
             };
             // Skip squares occupied by own pieces.
             if let Some(target_piece) = pos.piece_at(to)
-                && target_piece.color() == color {
-                    continue;
-                }
+                && target_piece.color() == color
+            {
+                continue;
+            }
             add_board_move_with_promotion(from, to, pt, promoted, color, moves);
         }
 
@@ -200,7 +222,10 @@ pub fn generate_pseudo_legal_drops(pos: &Position, color: Color, moves: &mut Vec
             if is_dead_drop(hpt, to.row(), color) {
                 continue;
             }
-            moves.push(Move::Drop { to, piece_type: hpt });
+            moves.push(Move::Drop {
+                to,
+                piece_type: hpt,
+            });
         }
     }
 }
@@ -247,7 +272,12 @@ mod tests {
         let pawn_pushes = moves
             .iter()
             .filter(|m| {
-                if let Move::Board { from, to, promote: false } = m {
+                if let Move::Board {
+                    from,
+                    to,
+                    promote: false,
+                } = m
+                {
                     from.row() == 6 && to.row() == 5
                 } else {
                     false
@@ -357,8 +387,12 @@ mod tests {
             moves
         );
 
-        let has_non_promote = moves.iter().any(|m| matches!(m, Move::Board { promote: false, .. }));
-        let has_promote = moves.iter().any(|m| matches!(m, Move::Board { promote: true, .. }));
+        let has_non_promote = moves
+            .iter()
+            .any(|m| matches!(m, Move::Board { promote: false, .. }));
+        let has_promote = moves
+            .iter()
+            .any(|m| matches!(m, Move::Board { promote: true, .. }));
         assert!(has_non_promote, "Missing non-promoting move");
         assert!(has_promote, "Missing promoting move");
     }
@@ -370,29 +404,74 @@ mod tests {
     #[test]
     fn test_dead_drop_prevention() {
         // Pawn
-        assert!(is_dead_drop(HandPieceType::Pawn, 0, Color::Black), "Pawn drop to row 0 is dead for Black");
-        assert!(!is_dead_drop(HandPieceType::Pawn, 1, Color::Black), "Pawn drop to row 1 is not dead for Black");
-        assert!(is_dead_drop(HandPieceType::Pawn, 8, Color::White), "Pawn drop to row 8 is dead for White");
-        assert!(!is_dead_drop(HandPieceType::Pawn, 7, Color::White), "Pawn drop to row 7 is not dead for White");
+        assert!(
+            is_dead_drop(HandPieceType::Pawn, 0, Color::Black),
+            "Pawn drop to row 0 is dead for Black"
+        );
+        assert!(
+            !is_dead_drop(HandPieceType::Pawn, 1, Color::Black),
+            "Pawn drop to row 1 is not dead for Black"
+        );
+        assert!(
+            is_dead_drop(HandPieceType::Pawn, 8, Color::White),
+            "Pawn drop to row 8 is dead for White"
+        );
+        assert!(
+            !is_dead_drop(HandPieceType::Pawn, 7, Color::White),
+            "Pawn drop to row 7 is not dead for White"
+        );
 
         // Lance
-        assert!(is_dead_drop(HandPieceType::Lance, 0, Color::Black), "Lance drop to row 0 is dead for Black");
-        assert!(!is_dead_drop(HandPieceType::Lance, 1, Color::Black), "Lance drop to row 1 is not dead for Black");
+        assert!(
+            is_dead_drop(HandPieceType::Lance, 0, Color::Black),
+            "Lance drop to row 0 is dead for Black"
+        );
+        assert!(
+            !is_dead_drop(HandPieceType::Lance, 1, Color::Black),
+            "Lance drop to row 1 is not dead for Black"
+        );
 
         // Knight
-        assert!(is_dead_drop(HandPieceType::Knight, 0, Color::Black), "Knight drop to row 0 is dead for Black");
-        assert!(is_dead_drop(HandPieceType::Knight, 1, Color::Black), "Knight drop to row 1 is dead for Black");
-        assert!(!is_dead_drop(HandPieceType::Knight, 2, Color::Black), "Knight drop to row 2 is not dead for Black");
-        assert!(is_dead_drop(HandPieceType::Knight, 8, Color::White), "Knight drop to row 8 is dead for White");
-        assert!(is_dead_drop(HandPieceType::Knight, 7, Color::White), "Knight drop to row 7 is dead for White");
-        assert!(!is_dead_drop(HandPieceType::Knight, 6, Color::White), "Knight drop to row 6 is not dead for White");
+        assert!(
+            is_dead_drop(HandPieceType::Knight, 0, Color::Black),
+            "Knight drop to row 0 is dead for Black"
+        );
+        assert!(
+            is_dead_drop(HandPieceType::Knight, 1, Color::Black),
+            "Knight drop to row 1 is dead for Black"
+        );
+        assert!(
+            !is_dead_drop(HandPieceType::Knight, 2, Color::Black),
+            "Knight drop to row 2 is not dead for Black"
+        );
+        assert!(
+            is_dead_drop(HandPieceType::Knight, 8, Color::White),
+            "Knight drop to row 8 is dead for White"
+        );
+        assert!(
+            is_dead_drop(HandPieceType::Knight, 7, Color::White),
+            "Knight drop to row 7 is dead for White"
+        );
+        assert!(
+            !is_dead_drop(HandPieceType::Knight, 6, Color::White),
+            "Knight drop to row 6 is not dead for White"
+        );
 
         // Gold — never a dead drop
-        assert!(!is_dead_drop(HandPieceType::Gold, 0, Color::Black), "Gold is never a dead drop");
-        assert!(!is_dead_drop(HandPieceType::Gold, 8, Color::White), "Gold is never a dead drop");
+        assert!(
+            !is_dead_drop(HandPieceType::Gold, 0, Color::Black),
+            "Gold is never a dead drop"
+        );
+        assert!(
+            !is_dead_drop(HandPieceType::Gold, 8, Color::White),
+            "Gold is never a dead drop"
+        );
 
         // Silver — never a dead drop
-        assert!(!is_dead_drop(HandPieceType::Silver, 0, Color::Black), "Silver is never a dead drop");
+        assert!(
+            !is_dead_drop(HandPieceType::Silver, 0, Color::Black),
+            "Silver is never a dead drop"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -434,7 +513,11 @@ mod tests {
         // Row 3 is NOT in White's promotion zone (rows 6-8), so no promotion variant.
         assert_eq!(moves.len(), 1, "White pawn at (2,4) should have 1 move");
         match moves[0] {
-            Move::Board { from, to, promote: false } => {
+            Move::Board {
+                from,
+                to,
+                promote: false,
+            } => {
                 assert_eq!(from.row(), 2);
                 assert_eq!(to.row(), 3);
                 assert_eq!(to.col(), 4);
@@ -452,11 +535,16 @@ mod tests {
         generate_pseudo_legal_board_moves(&pos, Color::White, &mut moves);
 
         assert_eq!(
-            moves.len(), 2,
+            moves.len(),
+            2,
             "White pawn at (5,4) should have 2 moves (promote + non-promote)"
         );
-        let has_promote = moves.iter().any(|m| matches!(m, Move::Board { promote: true, .. }));
-        let has_non_promote = moves.iter().any(|m| matches!(m, Move::Board { promote: false, .. }));
+        let has_promote = moves
+            .iter()
+            .any(|m| matches!(m, Move::Board { promote: true, .. }));
+        let has_non_promote = moves
+            .iter()
+            .any(|m| matches!(m, Move::Board { promote: false, .. }));
         assert!(has_promote, "Missing promotion move");
         assert!(has_non_promote, "Missing non-promotion move");
     }
@@ -468,7 +556,11 @@ mod tests {
         let mut moves = Vec::new();
         generate_pseudo_legal_board_moves(&pos, Color::White, &mut moves);
 
-        assert_eq!(moves.len(), 1, "White pawn at (7,4) should have 1 forced promotion");
+        assert_eq!(
+            moves.len(),
+            1,
+            "White pawn at (7,4) should have 1 forced promotion"
+        );
         match moves[0] {
             Move::Board { promote: true, .. } => {}
             _ => panic!("Expected forced promotion move"),
@@ -489,11 +581,21 @@ mod tests {
 
         let targets: Vec<Square> = moves
             .iter()
-            .filter_map(|m| if let Move::Board { to, .. } = m { Some(*to) } else { None })
+            .filter_map(|m| {
+                if let Move::Board { to, .. } = m {
+                    Some(*to)
+                } else {
+                    None
+                }
+            })
             .collect();
         assert!(targets.contains(&t1), "White knight should target (6,3)");
         assert!(targets.contains(&t2), "White knight should target (6,5)");
-        assert_eq!(moves.len(), 4, "White knight at (4,4) with both targets in promotion zone should have 4 moves");
+        assert_eq!(
+            moves.len(),
+            4,
+            "White knight at (4,4) with both targets in promotion zone should have 4 moves"
+        );
     }
 
     /// White startpos opening moves count.
@@ -534,7 +636,8 @@ mod tests {
         generate_pseudo_legal_board_moves(&pos, Color::Black, &mut moves);
 
         assert_eq!(
-            moves.len(), 19,
+            moves.len(),
+            19,
             "Lone rook at (4,4) should have 19 moves (including promotion variants)"
         );
     }
@@ -560,7 +663,8 @@ mod tests {
         generate_pseudo_legal_board_moves(&pos, Color::Black, &mut moves);
 
         assert_eq!(
-            moves.len(), 22,
+            moves.len(),
+            22,
             "Lone bishop at (4,4) should have 22 moves (including promotion variants)"
         );
     }
@@ -579,7 +683,8 @@ mod tests {
         generate_pseudo_legal_board_moves(&pos, Color::Black, &mut moves);
 
         assert_eq!(
-            moves.len(), 6,
+            moves.len(),
+            6,
             "Lone lance at (4,4) should have 6 moves (including promotion variants)"
         );
     }
@@ -638,9 +743,9 @@ mod tests {
         }
 
         // Rook should still reach (4,5) — one square before own pawn
-        let reaches_45 = rook_moves.iter().any(|m| {
-            matches!(m, Move::Board { to, .. } if *to == Square::from_row_col(4, 5).unwrap())
-        });
+        let reaches_45 = rook_moves.iter().any(
+            |m| matches!(m, Move::Board { to, .. } if *to == Square::from_row_col(4, 5).unwrap()),
+        );
         assert!(reaches_45, "Rook should be able to reach (4,5)");
     }
 
@@ -672,14 +777,14 @@ mod tests {
             .collect();
 
         // Bishop should reach (3,3) but NOT (2,2), (1,1), or (0,0)
-        let reaches_33 = bishop_moves.iter().any(|m| {
-            matches!(m, Move::Board { to, .. } if *to == Square::from_row_col(3, 3).unwrap())
-        });
+        let reaches_33 = bishop_moves.iter().any(
+            |m| matches!(m, Move::Board { to, .. } if *to == Square::from_row_col(3, 3).unwrap()),
+        );
         assert!(reaches_33, "Bishop should reach (3,3) before blocker");
 
-        let reaches_22 = bishop_moves.iter().any(|m| {
-            matches!(m, Move::Board { to, .. } if *to == Square::from_row_col(2, 2).unwrap())
-        });
+        let reaches_22 = bishop_moves.iter().any(
+            |m| matches!(m, Move::Board { to, .. } if *to == Square::from_row_col(2, 2).unwrap()),
+        );
         assert!(!reaches_22, "Bishop should NOT capture own piece at (2,2)");
     }
 
@@ -701,7 +806,13 @@ mod tests {
 
         let targets: Vec<Square> = moves
             .iter()
-            .filter_map(|m| if let Move::Board { to, .. } = m { Some(*to) } else { None })
+            .filter_map(|m| {
+                if let Move::Board { to, .. } = m {
+                    Some(*to)
+                } else {
+                    None
+                }
+            })
             .collect();
 
         // (1,1) is the only reachable square
@@ -717,7 +828,12 @@ mod tests {
 
         // Unique target squares: only (1,1)
         let unique: std::collections::HashSet<usize> = targets.iter().map(|s| s.index()).collect();
-        assert_eq!(unique.len(), 1, "Silver at (0,0) should have exactly 1 target square, got {:?}", targets);
+        assert_eq!(
+            unique.len(),
+            1,
+            "Silver at (0,0) should have exactly 1 target square, got {:?}",
+            targets
+        );
     }
 
     /// Silver at corner (0,8) for Black.
@@ -731,11 +847,22 @@ mod tests {
 
         let targets: Vec<Square> = moves
             .iter()
-            .filter_map(|m| if let Move::Board { to, .. } = m { Some(*to) } else { None })
+            .filter_map(|m| {
+                if let Move::Board { to, .. } = m {
+                    Some(*to)
+                } else {
+                    None
+                }
+            })
             .collect();
 
         let unique: std::collections::HashSet<usize> = targets.iter().map(|s| s.index()).collect();
-        assert_eq!(unique.len(), 1, "Silver at (0,8) should have exactly 1 target, got {:?}", targets);
+        assert_eq!(
+            unique.len(),
+            1,
+            "Silver at (0,8) should have exactly 1 target, got {:?}",
+            targets
+        );
         assert!(targets.contains(&Square::from_row_col(1, 7).unwrap()));
     }
 
@@ -752,11 +879,22 @@ mod tests {
 
         let targets: Vec<Square> = moves
             .iter()
-            .filter_map(|m| if let Move::Board { to, .. } = m { Some(*to) } else { None })
+            .filter_map(|m| {
+                if let Move::Board { to, .. } = m {
+                    Some(*to)
+                } else {
+                    None
+                }
+            })
             .collect();
 
         let unique: std::collections::HashSet<usize> = targets.iter().map(|s| s.index()).collect();
-        assert_eq!(unique.len(), 2, "Gold at (0,0) should have 2 targets, got {:?}", targets);
+        assert_eq!(
+            unique.len(),
+            2,
+            "Gold at (0,0) should have 2 targets, got {:?}",
+            targets
+        );
         assert!(targets.contains(&Square::from_row_col(0, 1).unwrap()));
         assert!(targets.contains(&Square::from_row_col(1, 0).unwrap()));
     }
@@ -773,21 +911,39 @@ mod tests {
 
         let targets: std::collections::HashSet<usize> = moves
             .iter()
-            .filter_map(|m| if let Move::Board { to, .. } = m { Some(to.index()) } else { None })
+            .filter_map(|m| {
+                if let Move::Board { to, .. } = m {
+                    Some(to.index())
+                } else {
+                    None
+                }
+            })
             .collect();
 
         // Steps: (0,1) and (1,0)
-        assert!(targets.contains(&Square::from_row_col(0, 1).unwrap().index()), "Horse step to (0,1)");
-        assert!(targets.contains(&Square::from_row_col(1, 0).unwrap().index()), "Horse step to (1,0)");
+        assert!(
+            targets.contains(&Square::from_row_col(0, 1).unwrap().index()),
+            "Horse step to (0,1)"
+        );
+        assert!(
+            targets.contains(&Square::from_row_col(1, 0).unwrap().index()),
+            "Horse step to (1,0)"
+        );
         // Diagonal slide: (1,1) through (8,8)
         for i in 1..=8 {
             assert!(
                 targets.contains(&Square::from_row_col(i, i).unwrap().index()),
-                "Horse diagonal slide to ({},{})", i, i
+                "Horse diagonal slide to ({},{})",
+                i,
+                i
             );
         }
         // Total unique targets: 2 steps + 8 diagonal = 10
-        assert_eq!(targets.len(), 10, "Horse at (0,0) should have 10 unique targets");
+        assert_eq!(
+            targets.len(),
+            10,
+            "Horse at (0,0) should have 10 unique targets"
+        );
     }
 
     /// Dragon (promoted Rook) at corner (8,8).
@@ -802,26 +958,41 @@ mod tests {
 
         let targets: std::collections::HashSet<usize> = moves
             .iter()
-            .filter_map(|m| if let Move::Board { to, .. } = m { Some(to.index()) } else { None })
+            .filter_map(|m| {
+                if let Move::Board { to, .. } = m {
+                    Some(to.index())
+                } else {
+                    None
+                }
+            })
             .collect();
 
         // Diagonal step: only (7,7)
-        assert!(targets.contains(&Square::from_row_col(7, 7).unwrap().index()), "Dragon step to (7,7)");
+        assert!(
+            targets.contains(&Square::from_row_col(7, 7).unwrap().index()),
+            "Dragon step to (7,7)"
+        );
         // Orthogonal slides: UP col 8 (rows 0-7) + LEFT row 8 (cols 0-7)
         for r in 0..8 {
             assert!(
                 targets.contains(&Square::from_row_col(r, 8).unwrap().index()),
-                "Dragon UP slide to ({},8)", r
+                "Dragon UP slide to ({},8)",
+                r
             );
         }
         for c in 0..8 {
             assert!(
                 targets.contains(&Square::from_row_col(8, c).unwrap().index()),
-                "Dragon LEFT slide to (8,{})", c
+                "Dragon LEFT slide to (8,{})",
+                c
             );
         }
         // Total: 1 step + 8 up + 8 left = 17
-        assert_eq!(targets.len(), 17, "Dragon at (8,8) should have 17 unique targets");
+        assert_eq!(
+            targets.len(),
+            17,
+            "Dragon at (8,8) should have 17 unique targets"
+        );
     }
 
     /// Drop generation with zero hand pieces should produce no drops.
@@ -830,7 +1001,10 @@ mod tests {
         let pos = Position::startpos(); // All pieces on board, nothing in hand
         let mut moves = Vec::new();
         generate_pseudo_legal_drops(&pos, Color::Black, &mut moves);
-        assert!(moves.is_empty(), "No drops should be generated with empty hand");
+        assert!(
+            moves.is_empty(),
+            "No drops should be generated with empty hand"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -849,14 +1023,20 @@ mod tests {
         generate_pseudo_legal_board_moves(&pos_gold, Color::Black, &mut gold_moves);
 
         // Sort by destination for comparison (Gold can't promote, Tokin already promoted)
-        let mut tokin_targets: Vec<u8> = tokin_moves.iter().map(|m| match m {
-            Move::Board { to, .. } => to.index() as u8,
-            _ => unreachable!(),
-        }).collect();
-        let mut gold_targets: Vec<u8> = gold_moves.iter().map(|m| match m {
-            Move::Board { to, .. } => to.index() as u8,
-            _ => unreachable!(),
-        }).collect();
+        let mut tokin_targets: Vec<u8> = tokin_moves
+            .iter()
+            .map(|m| match m {
+                Move::Board { to, .. } => to.index() as u8,
+                _ => unreachable!(),
+            })
+            .collect();
+        let mut gold_targets: Vec<u8> = gold_moves
+            .iter()
+            .map(|m| match m {
+                Move::Board { to, .. } => to.index() as u8,
+                _ => unreachable!(),
+            })
+            .collect();
         tokin_targets.sort();
         gold_targets.sort();
 
@@ -877,14 +1057,20 @@ mod tests {
         generate_pseudo_legal_board_moves(&pos_plance, Color::Black, &mut plance_moves);
         generate_pseudo_legal_board_moves(&pos_gold, Color::Black, &mut gold_moves);
 
-        let mut plance_targets: Vec<u8> = plance_moves.iter().map(|m| match m {
-            Move::Board { to, .. } => to.index() as u8,
-            _ => unreachable!(),
-        }).collect();
-        let mut gold_targets: Vec<u8> = gold_moves.iter().map(|m| match m {
-            Move::Board { to, .. } => to.index() as u8,
-            _ => unreachable!(),
-        }).collect();
+        let mut plance_targets: Vec<u8> = plance_moves
+            .iter()
+            .map(|m| match m {
+                Move::Board { to, .. } => to.index() as u8,
+                _ => unreachable!(),
+            })
+            .collect();
+        let mut gold_targets: Vec<u8> = gold_moves
+            .iter()
+            .map(|m| match m {
+                Move::Board { to, .. } => to.index() as u8,
+                _ => unreachable!(),
+            })
+            .collect();
         plance_targets.sort();
         gold_targets.sort();
 
@@ -905,14 +1091,20 @@ mod tests {
         generate_pseudo_legal_board_moves(&pos_pknight, Color::Black, &mut pknight_moves);
         generate_pseudo_legal_board_moves(&pos_gold, Color::Black, &mut gold_moves);
 
-        let mut pknight_targets: Vec<u8> = pknight_moves.iter().map(|m| match m {
-            Move::Board { to, .. } => to.index() as u8,
-            _ => unreachable!(),
-        }).collect();
-        let mut gold_targets: Vec<u8> = gold_moves.iter().map(|m| match m {
-            Move::Board { to, .. } => to.index() as u8,
-            _ => unreachable!(),
-        }).collect();
+        let mut pknight_targets: Vec<u8> = pknight_moves
+            .iter()
+            .map(|m| match m {
+                Move::Board { to, .. } => to.index() as u8,
+                _ => unreachable!(),
+            })
+            .collect();
+        let mut gold_targets: Vec<u8> = gold_moves
+            .iter()
+            .map(|m| match m {
+                Move::Board { to, .. } => to.index() as u8,
+                _ => unreachable!(),
+            })
+            .collect();
         pknight_targets.sort();
         gold_targets.sort();
 
@@ -933,14 +1125,20 @@ mod tests {
         generate_pseudo_legal_board_moves(&pos_psilver, Color::Black, &mut psilver_moves);
         generate_pseudo_legal_board_moves(&pos_gold, Color::Black, &mut gold_moves);
 
-        let mut psilver_targets: Vec<u8> = psilver_moves.iter().map(|m| match m {
-            Move::Board { to, .. } => to.index() as u8,
-            _ => unreachable!(),
-        }).collect();
-        let mut gold_targets: Vec<u8> = gold_moves.iter().map(|m| match m {
-            Move::Board { to, .. } => to.index() as u8,
-            _ => unreachable!(),
-        }).collect();
+        let mut psilver_targets: Vec<u8> = psilver_moves
+            .iter()
+            .map(|m| match m {
+                Move::Board { to, .. } => to.index() as u8,
+                _ => unreachable!(),
+            })
+            .collect();
+        let mut gold_targets: Vec<u8> = gold_moves
+            .iter()
+            .map(|m| match m {
+                Move::Board { to, .. } => to.index() as u8,
+                _ => unreachable!(),
+            })
+            .collect();
         psilver_targets.sort();
         gold_targets.sort();
 
@@ -953,7 +1151,12 @@ mod tests {
     /// White promoted pieces should also move like Gold (with correct direction).
     #[test]
     fn test_white_promoted_pieces_move_like_gold() {
-        for pt in [PieceType::Pawn, PieceType::Lance, PieceType::Knight, PieceType::Silver] {
+        for pt in [
+            PieceType::Pawn,
+            PieceType::Lance,
+            PieceType::Knight,
+            PieceType::Silver,
+        ] {
             let pos_promoted = lone_piece_pos(4, 4, pt, Color::White, true);
             let pos_gold = lone_piece_pos(4, 4, PieceType::Gold, Color::White, false);
 
@@ -962,14 +1165,20 @@ mod tests {
             generate_pseudo_legal_board_moves(&pos_promoted, Color::White, &mut promoted_moves);
             generate_pseudo_legal_board_moves(&pos_gold, Color::White, &mut gold_moves);
 
-            let mut promoted_targets: Vec<u8> = promoted_moves.iter().map(|m| match m {
-                Move::Board { to, .. } => to.index() as u8,
-                _ => unreachable!(),
-            }).collect();
-            let mut gold_targets: Vec<u8> = gold_moves.iter().map(|m| match m {
-                Move::Board { to, .. } => to.index() as u8,
-                _ => unreachable!(),
-            }).collect();
+            let mut promoted_targets: Vec<u8> = promoted_moves
+                .iter()
+                .map(|m| match m {
+                    Move::Board { to, .. } => to.index() as u8,
+                    _ => unreachable!(),
+                })
+                .collect();
+            let mut gold_targets: Vec<u8> = gold_moves
+                .iter()
+                .map(|m| match m {
+                    Move::Board { to, .. } => to.index() as u8,
+                    _ => unreachable!(),
+                })
+                .collect();
             promoted_targets.sort();
             gold_targets.sort();
 
@@ -1010,9 +1219,10 @@ mod tests {
         // Count drops per hand piece type
         let empty_squares = 81 - 2; // 2 kings on board
         for &hpt in &HandPieceType::ALL {
-            let drops_for_type: usize = moves.iter().filter(|m| {
-                matches!(m, Move::Drop { piece_type, .. } if *piece_type == hpt)
-            }).count();
+            let drops_for_type: usize = moves
+                .iter()
+                .filter(|m| matches!(m, Move::Drop { piece_type, .. } if *piece_type == hpt))
+                .count();
 
             // Calculate expected: empty_squares minus dead-drop exclusions
             let dead_drop_exclusions = match hpt {
@@ -1040,11 +1250,13 @@ mod tests {
         let total_expected = 4 * empty_squares // Gold, Silver, Bishop, Rook (no restrictions)
             + (empty_squares - 8)              // Pawn (exclude row 0)
             + (empty_squares - 8)              // Lance (exclude row 0)
-            + (empty_squares - 17);            // Knight (exclude rows 0-1)
+            + (empty_squares - 17); // Knight (exclude rows 0-1)
         assert_eq!(
-            moves.len(), total_expected,
+            moves.len(),
+            total_expected,
             "Total drops with all 7 hand piece types: expected {}, got {}",
-            total_expected, moves.len()
+            total_expected,
+            moves.len()
         );
     }
 
@@ -1181,27 +1393,33 @@ mod tests {
 
         // No pawn drops on row 8
         for mv in &moves {
-            if let Move::Drop { to, piece_type: HandPieceType::Pawn } = mv {
-                assert_ne!(
-                    to.row(), 8,
-                    "White pawn drop on row 8 is a dead drop"
-                );
+            if let Move::Drop {
+                to,
+                piece_type: HandPieceType::Pawn,
+            } = mv
+            {
+                assert_ne!(to.row(), 8, "White pawn drop on row 8 is a dead drop");
             }
         }
 
         // No lance drops on row 8
         for mv in &moves {
-            if let Move::Drop { to, piece_type: HandPieceType::Lance } = mv {
-                assert_ne!(
-                    to.row(), 8,
-                    "White lance drop on row 8 is a dead drop"
-                );
+            if let Move::Drop {
+                to,
+                piece_type: HandPieceType::Lance,
+            } = mv
+            {
+                assert_ne!(to.row(), 8, "White lance drop on row 8 is a dead drop");
             }
         }
 
         // No knight drops on rows 7 or 8
         for mv in &moves {
-            if let Move::Drop { to, piece_type: HandPieceType::Knight } = mv {
+            if let Move::Drop {
+                to,
+                piece_type: HandPieceType::Knight,
+            } = mv
+            {
                 assert!(
                     to.row() < 7,
                     "White knight drop on row {} is a dead drop",
@@ -1225,7 +1443,10 @@ mod tests {
         );
         // Black silver on row 3 (just outside promotion zone)
         let silver_sq = Square::from_row_col(3, 0).unwrap();
-        pos.set_piece(silver_sq, Piece::new(PieceType::Silver, Color::Black, false));
+        pos.set_piece(
+            silver_sq,
+            Piece::new(PieceType::Silver, Color::Black, false),
+        );
 
         let mut moves = Vec::new();
         generate_pseudo_legal_board_moves(&pos, Color::Black, &mut moves);
@@ -1236,10 +1457,20 @@ mod tests {
             .filter(|mv| matches!(mv, Move::Board { from, to, .. } if *from == silver_sq && to.row() == 2))
             .collect();
 
-        let has_promote = to_promo_zone.iter().any(|mv| matches!(mv, Move::Board { promote: true, .. }));
-        let has_no_promote = to_promo_zone.iter().any(|mv| matches!(mv, Move::Board { promote: false, .. }));
+        let has_promote = to_promo_zone
+            .iter()
+            .any(|mv| matches!(mv, Move::Board { promote: true, .. }));
+        let has_no_promote = to_promo_zone
+            .iter()
+            .any(|mv| matches!(mv, Move::Board { promote: false, .. }));
 
-        assert!(has_promote, "Silver moving into promotion zone should have promote=true variant");
-        assert!(has_no_promote, "Silver moving into promotion zone should have promote=false variant");
+        assert!(
+            has_promote,
+            "Silver moving into promotion zone should have promote=true variant"
+        );
+        assert!(
+            has_no_promote,
+            "Silver moving into promotion zone should have promote=false variant"
+        );
     }
 }

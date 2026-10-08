@@ -5,11 +5,10 @@
 
 use crate::piece::Piece;
 use crate::position::Position;
-use crate::types::{Color, HandPieceType, PieceType, Square, ShogiError};
+use crate::types::{Color, HandPieceType, PieceType, ShogiError, Square};
 
 /// The SFEN string for the standard Shogi starting position.
-pub const STARTPOS_SFEN: &str =
-    "lnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL b - 1";
+pub const STARTPOS_SFEN: &str = "lnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL b - 1";
 
 // ---------------------------------------------------------------------------
 // Helper: piece -> SFEN character(s)
@@ -20,14 +19,14 @@ pub const STARTPOS_SFEN: &str =
 /// Black pieces use uppercase letters; White pieces use lowercase.
 fn piece_to_sfen_char(piece: Piece) -> String {
     let base = match piece.piece_type() {
-        PieceType::Pawn   => 'P',
-        PieceType::Lance  => 'L',
+        PieceType::Pawn => 'P',
+        PieceType::Lance => 'L',
         PieceType::Knight => 'N',
         PieceType::Silver => 'S',
-        PieceType::Gold   => 'G',
+        PieceType::Gold => 'G',
         PieceType::Bishop => 'B',
-        PieceType::Rook   => 'R',
-        PieceType::King   => 'K',
+        PieceType::Rook => 'R',
+        PieceType::King => 'K',
     };
 
     let ch = if piece.color() == Color::White {
@@ -146,13 +145,13 @@ impl Position {
                         hands_str.push_str(&count.to_string());
                     }
                     let ch = match hpt {
-                        HandPieceType::Rook   => 'R',
+                        HandPieceType::Rook => 'R',
                         HandPieceType::Bishop => 'B',
-                        HandPieceType::Gold   => 'G',
+                        HandPieceType::Gold => 'G',
                         HandPieceType::Silver => 'S',
                         HandPieceType::Knight => 'N',
-                        HandPieceType::Lance  => 'L',
-                        HandPieceType::Pawn   => 'P',
+                        HandPieceType::Lance => 'L',
+                        HandPieceType::Pawn => 'P',
                     };
                     let ch = if color == Color::White {
                         ch.to_ascii_lowercase()
@@ -213,7 +212,10 @@ impl Position {
                     })?;
                     let piece = sfen_char_to_piece(next, true)?;
                     let sq = Square::from_row_col(row as u8, col).map_err(|_| {
-                        ShogiError::InvalidSfen(format!("square out of range row={} col={}", row, col))
+                        ShogiError::InvalidSfen(format!(
+                            "square out of range row={} col={}",
+                            row, col
+                        ))
                     })?;
                     pos.set_piece(sq, piece);
                     col += 1;
@@ -229,7 +231,10 @@ impl Position {
                 } else if ch.is_ascii_alphabetic() {
                     let piece = sfen_char_to_piece(ch, false)?;
                     let sq = Square::from_row_col(row as u8, col).map_err(|_| {
-                        ShogiError::InvalidSfen(format!("square out of range row={} col={}", row, col))
+                        ShogiError::InvalidSfen(format!(
+                            "square out of range row={} col={}",
+                            row, col
+                        ))
                     })?;
                     pos.set_piece(sq, piece);
                     col += 1;
@@ -394,15 +399,19 @@ mod tests {
         // 'X' is not a valid piece character
         let sfen = "Xnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL b - 1";
         let result = Position::from_sfen(sfen);
-        assert!(result.is_err(), "expected error for invalid piece character");
+        assert!(
+            result.is_err(),
+            "expected error for invalid piece character"
+        );
     }
 
     #[test]
     fn test_sfen_different_positions_different_hashes() {
         let pos1 = Position::startpos();
         // White to move variant
-        let pos2 = Position::from_sfen("lnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL w - 1")
-            .expect("parse failed");
+        let pos2 =
+            Position::from_sfen("lnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL w - 1")
+                .expect("parse failed");
         assert_ne!(
             pos1.hash, pos2.hash,
             "different positions must have different hashes"
@@ -557,7 +566,9 @@ mod tests {
         // Serialize to SFEN and verify hand shows 'R' (not '+R')
         let sfen = gs.position.to_sfen();
         assert!(
-            sfen.contains(" R ") || sfen.contains(" R") || sfen.split_whitespace().nth(2).unwrap().contains('R'),
+            sfen.contains(" R ")
+                || sfen.contains(" R")
+                || sfen.split_whitespace().nth(2).unwrap().contains('R'),
             "SFEN hand should show 'R' (base type), got hand part: {}",
             sfen.split_whitespace().nth(2).unwrap()
         );
@@ -569,7 +580,10 @@ mod tests {
             1,
             "Roundtrip after capture: Black should still have 1 Rook in hand"
         );
-        assert_eq!(reparsed.board, gs.position.board, "Board mismatch after SFEN roundtrip");
+        assert_eq!(
+            reparsed.board, gs.position.board,
+            "Board mismatch after SFEN roundtrip"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -700,7 +714,10 @@ mod tests {
         // Hand string "3" — count with no following piece
         let sfen = "4k4/9/9/9/9/9/9/9/4K4 b 3 1";
         let result = Position::from_sfen(sfen);
-        assert!(result.is_err(), "hand string ending after count should be rejected");
+        assert!(
+            result.is_err(),
+            "hand string ending after count should be rejected"
+        );
     }
 
     #[test]
@@ -708,7 +725,10 @@ mod tests {
         // 'X' is not a valid hand piece
         let sfen = "4k4/9/9/9/9/9/9/9/4K4 b X 1";
         let result = Position::from_sfen(sfen);
-        assert!(result.is_err(), "invalid hand piece character should be rejected");
+        assert!(
+            result.is_err(),
+            "invalid hand piece character should be rejected"
+        );
     }
 
     #[test]
@@ -716,7 +736,10 @@ mod tests {
         // '!' is not valid in board string
         let sfen = "!nsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL b - 1";
         let result = Position::from_sfen(sfen);
-        assert!(result.is_err(), "unexpected character in board should be rejected");
+        assert!(
+            result.is_err(),
+            "unexpected character in board should be rejected"
+        );
     }
 
     // -----------------------------------------------------------------------

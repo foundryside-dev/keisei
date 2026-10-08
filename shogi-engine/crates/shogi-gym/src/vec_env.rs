@@ -8,14 +8,14 @@
 //! Auto-resets terminated/truncated games, saving terminal observations in a
 //! separate buffer before resetting.
 
-use crate::action_mapper::{ActionMapper, DefaultActionMapper, ACTION_SPACE_SIZE};
+use crate::action_mapper::{ACTION_SPACE_SIZE, ActionMapper, DefaultActionMapper};
 use crate::katago_observation::{
-    KataGoObservationGenerator, KATAGO_BUFFER_LEN, KATAGO_NUM_CHANNELS,
+    KATAGO_BUFFER_LEN, KATAGO_NUM_CHANNELS, KataGoObservationGenerator,
 };
 use crate::observation::{
-    DefaultObservationGenerator, ObservationGenerator, BUFFER_LEN, NUM_CHANNELS,
+    BUFFER_LEN, DefaultObservationGenerator, NUM_CHANNELS, ObservationGenerator,
 };
-use crate::spatial_action_mapper::{SpatialActionMapper, SPATIAL_ACTION_SPACE_SIZE};
+use crate::spatial_action_mapper::{SPATIAL_ACTION_SPACE_SIZE, SpatialActionMapper};
 use crate::spectator_data::{build_spectator_dict, move_notation, move_usi};
 use crate::step_result::{ResetResult, StepMetadata, StepResult, TerminationReason};
 
@@ -23,9 +23,9 @@ use numpy::{PyArrayMethods, ToPyArray};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 use rayon::prelude::*;
-use shogi_core::{Color, GameResult, GameState, HandPieceType, Move, MoveList};
 use shogi_core::rules::material_balance;
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use shogi_core::{Color, GameResult, GameState, HandPieceType, Move, MoveList};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Sentinel value meaning "no env should panic" in test builds.
@@ -99,11 +99,7 @@ impl<T> SendPtr<T> {
 fn compute_reward(result: &GameResult, last_mover: Color) -> f32 {
     match result {
         GameResult::Checkmate { winner } | GameResult::PerpetualCheck { winner } => {
-            if *winner == last_mover {
-                1.0
-            } else {
-                -1.0
-            }
+            if *winner == last_mover { 1.0 } else { -1.0 }
         }
         GameResult::Impasse {
             winner: Some(winner),
@@ -179,15 +175,23 @@ impl ActionMode {
 
     fn encode(&self, mv: Move, perspective: Color) -> Result<usize, String> {
         match self {
-            ActionMode::Default(m) => <DefaultActionMapper as ActionMapper>::encode(m, mv, perspective),
-            ActionMode::Spatial(m) => <SpatialActionMapper as ActionMapper>::encode(m, mv, perspective),
+            ActionMode::Default(m) => {
+                <DefaultActionMapper as ActionMapper>::encode(m, mv, perspective)
+            }
+            ActionMode::Spatial(m) => {
+                <SpatialActionMapper as ActionMapper>::encode(m, mv, perspective)
+            }
         }
     }
 
     fn decode(&self, idx: usize, perspective: Color) -> Result<Move, String> {
         match self {
-            ActionMode::Default(m) => <DefaultActionMapper as ActionMapper>::decode(m, idx, perspective),
-            ActionMode::Spatial(m) => <SpatialActionMapper as ActionMapper>::decode(m, idx, perspective),
+            ActionMode::Default(m) => {
+                <DefaultActionMapper as ActionMapper>::decode(m, idx, perspective)
+            }
+            ActionMode::Spatial(m) => {
+                <SpatialActionMapper as ActionMapper>::decode(m, idx, perspective)
+            }
         }
     }
 }
@@ -197,9 +201,15 @@ impl ActionMode {
 /// NOTE: Assumes all generators are stateless ZSTs. If a future generator
 /// acquires state, per-thread reconstruction would create independent copies.
 #[derive(Copy, Clone)]
-enum ObsModeTag { Default, KataGo }
+enum ObsModeTag {
+    Default,
+    KataGo,
+}
 #[derive(Copy, Clone)]
-enum ActionModeTag { Default, Spatial }
+enum ActionModeTag {
+    Default,
+    Spatial,
+}
 
 /// Compile-time safety: these `From` impls create an exhaustive match over every
 /// variant of the payload enum. If a new variant is added to `ObsMode` or
@@ -234,23 +244,23 @@ pub struct VecEnv {
     max_ply: u32,
 
     // Rust-owned flat buffers written in-place each step
-    obs_buffer: Vec<f32>,          // N * BUFFER_LEN
-    legal_mask_buffer: Vec<bool>,  // N * ACTION_SPACE_SIZE
-    reward_buffer: Vec<f32>,       // N
-    terminated_buffer: Vec<bool>,  // N
-    truncated_buffer: Vec<bool>,   // N
-    captured_buffer: Vec<u8>,      // N (metadata)
-    term_reason_buffer: Vec<u8>,   // N (metadata)
-    ply_buffer: Vec<u16>,          // N (metadata)
+    obs_buffer: Vec<f32>,              // N * BUFFER_LEN
+    legal_mask_buffer: Vec<bool>,      // N * ACTION_SPACE_SIZE
+    reward_buffer: Vec<f32>,           // N
+    terminated_buffer: Vec<bool>,      // N
+    truncated_buffer: Vec<bool>,       // N
+    captured_buffer: Vec<u8>,          // N (metadata)
+    term_reason_buffer: Vec<u8>,       // N (metadata)
+    ply_buffer: Vec<u16>,              // N (metadata)
     material_balance_buffer: Vec<i32>, // N (per-step material balance)
-    terminal_obs_buffer: Vec<f32>,   // N * BUFFER_LEN
-    current_players_buffer: Vec<u8>, // N (0=Black, 1=White)
+    terminal_obs_buffer: Vec<f32>,     // N * BUFFER_LEN
+    current_players_buffer: Vec<u8>,   // N (0=Black, 1=White)
 
     mapper: ActionMode,
     obs_gen: ObsMode,
-    obs_buffer_len: usize,    // cached: obs_mode.buffer_len()
-    action_space: usize,       // cached: action_mode.action_space_size()
-    num_channels: usize,       // cached: obs_mode.channels()
+    obs_buffer_len: usize, // cached: obs_mode.buffer_len()
+    action_space: usize,   // cached: action_mode.action_space_size()
+    num_channels: usize,   // cached: obs_mode.channels()
 
     // Per-env legal moves cache: populated during mask generation, reused for
     // move notation disambiguation without a second generate_legal_moves call.
@@ -273,7 +283,8 @@ impl VecEnv {
 
         let obs_start = i * self.obs_buffer_len;
         let obs_slice = &mut self.obs_buffer[obs_start..obs_start + self.obs_buffer_len];
-        self.obs_gen.generate(&self.games[i], perspective, obs_slice);
+        self.obs_gen
+            .generate(&self.games[i], perspective, obs_slice);
 
         let mask_start = i * self.action_space;
         let mask_slice = &mut self.legal_mask_buffer[mask_start..mask_start + self.action_space];
@@ -281,7 +292,9 @@ impl VecEnv {
         let mut move_list = MoveList::new();
         self.games[i].generate_legal_moves_into(&mut move_list);
         for mv in move_list.iter() {
-            let idx = self.mapper.encode(*mv, perspective)
+            let idx = self
+                .mapper
+                .encode(*mv, perspective)
                 .expect("legal move must be encodable");
             mask_slice[idx] = true;
         }
@@ -370,9 +383,7 @@ impl VecEnv {
                 *ply_ptr.offset(i) = game.ply as u16;
 
                 // Material balance from last_mover's perspective (every step).
-                *material_balance_ptr.offset(i) = material_balance(
-                    &game.position, last_mover,
-                );
+                *material_balance_ptr.offset(i) = material_balance(&game.position, last_mover);
 
                 // Captured piece metadata
                 if let Some(captured_piece) = undo_info.captured {
@@ -390,8 +401,7 @@ impl VecEnv {
                     ep_completed.fetch_add(1, Ordering::Relaxed);
                     ep_total_ply.fetch_add(game.ply as u64, Ordering::Relaxed);
                     match result {
-                        GameResult::Repetition
-                        | GameResult::Impasse { winner: None } => {
+                        GameResult::Repetition | GameResult::Impasse { winner: None } => {
                             ep_drawn.fetch_add(1, Ordering::Relaxed);
                         }
                         GameResult::MaxMoves => {
@@ -407,10 +417,16 @@ impl VecEnv {
                     );
                     let perspective = game.position.current_player;
                     match obs_tag {
-                        ObsModeTag::Default => DefaultObservationGenerator::new()
-                            .generate(game, perspective, term_obs_slice),
-                        ObsModeTag::KataGo => KataGoObservationGenerator::new()
-                            .generate(game, perspective, term_obs_slice),
+                        ObsModeTag::Default => DefaultObservationGenerator::new().generate(
+                            game,
+                            perspective,
+                            term_obs_slice,
+                        ),
+                        ObsModeTag::KataGo => KataGoObservationGenerator::new().generate(
+                            game,
+                            perspective,
+                            term_obs_slice,
+                        ),
                     }
 
                     // Auto-reset
@@ -420,29 +436,32 @@ impl VecEnv {
                 // Write obs+mask for current game state (reset or continuing)
                 let perspective = game.position.current_player;
 
-                let obs_slice = std::slice::from_raw_parts_mut(
-                    obs_ptr.offset(i * obs_buf_len),
-                    obs_buf_len,
-                );
+                let obs_slice =
+                    std::slice::from_raw_parts_mut(obs_ptr.offset(i * obs_buf_len), obs_buf_len);
                 match obs_tag {
-                    ObsModeTag::Default => DefaultObservationGenerator::new()
-                        .generate(game, perspective, obs_slice),
-                    ObsModeTag::KataGo => KataGoObservationGenerator::new()
-                        .generate(game, perspective, obs_slice),
+                    ObsModeTag::Default => {
+                        DefaultObservationGenerator::new().generate(game, perspective, obs_slice)
+                    }
+                    ObsModeTag::KataGo => {
+                        KataGoObservationGenerator::new().generate(game, perspective, obs_slice)
+                    }
                 }
 
-                let mask_slice = std::slice::from_raw_parts_mut(
-                    mask_ptr.offset(i * act_space),
-                    act_space,
-                );
+                let mask_slice =
+                    std::slice::from_raw_parts_mut(mask_ptr.offset(i * act_space), act_space);
                 mask_slice.fill(false);
                 let mut move_list = MoveList::new();
                 game.generate_legal_moves_into(&mut move_list);
                 for legal_mv in move_list.iter() {
                     let idx = match act_tag {
-                        ActionModeTag::Default => DefaultActionMapper.encode(*legal_mv, perspective),
-                        ActionModeTag::Spatial => SpatialActionMapper.encode(*legal_mv, perspective),
-                    }.expect("legal move must be encodable");
+                        ActionModeTag::Default => {
+                            DefaultActionMapper.encode(*legal_mv, perspective)
+                        }
+                        ActionModeTag::Spatial => {
+                            SpatialActionMapper.encode(*legal_mv, perspective)
+                        }
+                    }
+                    .expect("legal move must be encodable");
                     mask_slice[idx] = true;
                 }
                 // Cache legal moves for notation disambiguation
@@ -470,10 +489,7 @@ impl VecEnv {
                 } else {
                     "unknown panic".to_string()
                 };
-                eprintln!(
-                    "[VecEnv] PANIC in env {}: {} — auto-resetting",
-                    i, msg
-                );
+                eprintln!("[VecEnv] PANIC in env {}: {} — auto-resetting", i, msg);
 
                 // Recovery: reset the game and write safe sentinel values.
                 // SAFETY: index `i` is still exclusively ours.
@@ -497,10 +513,14 @@ impl VecEnv {
                         obs_buf_len,
                     );
                     match obs_tag {
-                        ObsModeTag::Default => DefaultObservationGenerator::new()
-                            .generate(game, perspective, obs_slice),
-                        ObsModeTag::KataGo => KataGoObservationGenerator::new()
-                            .generate(game, perspective, obs_slice),
+                        ObsModeTag::Default => DefaultObservationGenerator::new().generate(
+                            game,
+                            perspective,
+                            obs_slice,
+                        ),
+                        ObsModeTag::KataGo => {
+                            KataGoObservationGenerator::new().generate(game, perspective, obs_slice)
+                        }
                     }
 
                     let term_obs_slice = std::slice::from_raw_parts_mut(
@@ -509,10 +529,8 @@ impl VecEnv {
                     );
                     term_obs_slice.fill(0.0);
 
-                    let mask_slice = std::slice::from_raw_parts_mut(
-                        mask_ptr.offset(i * act_space),
-                        act_space,
-                    );
+                    let mask_slice =
+                        std::slice::from_raw_parts_mut(mask_ptr.offset(i * act_space), act_space);
                     mask_slice.fill(false);
                     let mut move_list = MoveList::new();
                     game.generate_legal_moves_into(&mut move_list);
@@ -524,7 +542,8 @@ impl VecEnv {
                             ActionModeTag::Spatial => {
                                 SpatialActionMapper.encode(*legal_mv, perspective)
                             }
-                        }.expect("legal move must be encodable");
+                        }
+                        .expect("legal move must be encodable");
                         mask_slice[idx] = true;
                     }
                     // Cache legal moves for notation disambiguation
@@ -557,21 +576,32 @@ impl VecEnv {
     /// Create a new VecEnv with `num_envs` parallel games.
     #[new]
     #[pyo3(signature = (num_envs = 512, max_ply = 500, observation_mode = "default", action_mode = "default"))]
-    pub fn new(num_envs: usize, max_ply: u32, observation_mode: &str, action_mode: &str) -> PyResult<Self> {
+    pub fn new(
+        num_envs: usize,
+        max_ply: u32,
+        observation_mode: &str,
+        action_mode: &str,
+    ) -> PyResult<Self> {
         let obs_mode = match observation_mode {
             "default" => ObsMode::Default(DefaultObservationGenerator::new()),
             "katago" => ObsMode::KataGo(KataGoObservationGenerator::new()),
-            _ => return Err(pyo3::exceptions::PyValueError::new_err(
-                format!("Unknown observation_mode '{}'. Valid: 'default', 'katago'", observation_mode)
-            )),
+            _ => {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "Unknown observation_mode '{}'. Valid: 'default', 'katago'",
+                    observation_mode
+                )));
+            }
         };
 
         let action_mode_enum = match action_mode {
             "default" => ActionMode::Default(DefaultActionMapper),
             "spatial" => ActionMode::Spatial(SpatialActionMapper),
-            _ => return Err(pyo3::exceptions::PyValueError::new_err(
-                format!("Unknown action_mode '{}'. Valid: 'default', 'spatial'", action_mode)
-            )),
+            _ => {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "Unknown action_mode '{}'. Valid: 'default', 'spatial'",
+                    action_mode
+                )));
+            }
         };
 
         let obs_buf_len = obs_mode.buffer_len();
@@ -664,19 +694,19 @@ impl VecEnv {
         for (i, action) in actions.iter().enumerate() {
             if *action < 0 {
                 return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                    "env {}: negative action index {}", i, *action
+                    "env {}: negative action index {}",
+                    i, *action
                 )));
             }
             let action_idx = *action as usize;
             let perspective = self.games[i].position.current_player;
 
-            let mv = self.mapper.decode(action_idx, perspective)
-                .map_err(|e| {
-                    pyo3::exceptions::PyRuntimeError::new_err(format!(
-                        "env {}: invalid action index {}: {}",
-                        i, action_idx, e
-                    ))
-                })?;
+            let mv = self.mapper.decode(action_idx, perspective).map_err(|e| {
+                pyo3::exceptions::PyRuntimeError::new_err(format!(
+                    "env {}: invalid action index {}: {}",
+                    i, action_idx, e
+                ))
+            })?;
 
             // Check legal mask
             let mask_start = i * self.action_space;
@@ -889,9 +919,9 @@ impl VecEnv {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use shogi_core::Color;
-    use crate::spatial_action_mapper::{SpatialActionMapper, SPATIAL_ACTION_SPACE_SIZE};
     use crate::action_mapper::ActionMapper;
+    use crate::spatial_action_mapper::{SPATIAL_ACTION_SPACE_SIZE, SpatialActionMapper};
+    use shogi_core::Color;
 
     /// Test-only constructor that builds a default-mode VecEnv without PyO3.
     fn make_env(num_envs: usize, max_ply: u32) -> VecEnv {
@@ -1098,7 +1128,10 @@ mod tests {
         );
 
         // Standard Shogi startpos has 30 legal moves
-        assert_eq!(legal_count, 30, "startpos should have exactly 30 legal moves");
+        assert_eq!(
+            legal_count, 30,
+            "startpos should have exactly 30 legal moves"
+        );
     }
 
     #[test]
@@ -1147,7 +1180,8 @@ mod tests {
 
         // White's response should also be 30 moves (symmetric position after one pawn push)
         assert_eq!(
-            legal_moves.len(), 30,
+            legal_moves.len(),
+            30,
             "White's first move should also have 30 options"
         );
     }
@@ -1166,8 +1200,7 @@ mod tests {
             assert!(
                 env.legal_mask_buffer[idx],
                 "Legal move {:?} encoded to index {} but mask is false",
-                mv,
-                idx
+                mv, idx
             );
         }
 
@@ -1202,7 +1235,8 @@ mod tests {
         let ch42_start = 42 * 81;
         for i in 0..81 {
             assert_eq!(
-                obs_slice[ch42_start + i], 1.0,
+                obs_slice[ch42_start + i],
+                1.0,
                 "Channel 42 should be 1.0 for Black at startpos"
             );
         }
@@ -1275,7 +1309,10 @@ mod tests {
         env.games[0].check_termination();
         assert_eq!(env.games[0].result, GameResult::MaxMoves);
 
-        let reward = compute_reward(&env.games[0].result, env.games[0].position.current_player.opponent());
+        let reward = compute_reward(
+            &env.games[0].result,
+            env.games[0].position.current_player.opponent(),
+        );
         assert_eq!(reward, 0.0, "MaxMoves should give 0.0 reward");
     }
 
@@ -1349,7 +1386,8 @@ mod tests {
         assert!(truncated, "MaxMoves should be a truncation");
 
         env.episodes_completed.fetch_add(1, Ordering::Relaxed);
-        env.total_episode_ply.fetch_add(env.games[0].ply as u64, Ordering::Relaxed);
+        env.total_episode_ply
+            .fetch_add(env.games[0].ply as u64, Ordering::Relaxed);
         if truncated {
             env.episodes_truncated.fetch_add(1, Ordering::Relaxed);
         }
@@ -1453,8 +1491,14 @@ mod tests {
             Color::Black => 0,
             Color::White => 1,
         };
-        assert_eq!(env.current_players_buffer[0], 0, "Game 0 should start as Black");
-        assert_eq!(env.current_players_buffer[1], 0, "Game 1 should start as Black");
+        assert_eq!(
+            env.current_players_buffer[0], 0,
+            "Game 0 should start as Black"
+        );
+        assert_eq!(
+            env.current_players_buffer[1], 0,
+            "Game 1 should start as Black"
+        );
 
         // Make a move in game 0 only
         let mv = env.games[0].legal_moves()[0];
@@ -1464,8 +1508,14 @@ mod tests {
             Color::White => 1,
         };
 
-        assert_eq!(env.current_players_buffer[0], 1, "Game 0 should be White after one move");
-        assert_eq!(env.current_players_buffer[1], 0, "Game 1 should still be Black");
+        assert_eq!(
+            env.current_players_buffer[0], 1,
+            "Game 0 should be White after one move"
+        );
+        assert_eq!(
+            env.current_players_buffer[1], 0,
+            "Game 1 should still be Black"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1483,12 +1533,14 @@ mod tests {
         ];
         for result in &draws {
             assert_eq!(
-                compute_reward(result, Color::Black), 0.0,
+                compute_reward(result, Color::Black),
+                0.0,
                 "{:?} should give 0.0 reward for Black",
                 result
             );
             assert_eq!(
-                compute_reward(result, Color::White), 0.0,
+                compute_reward(result, Color::White),
+                0.0,
                 "{:?} should give 0.0 reward for White",
                 result
             );
@@ -1523,7 +1575,10 @@ mod tests {
         // Now env 1 should differ from env 0
         let obs0_after = &env.obs_buffer[0..BUFFER_LEN];
         let obs1_after = &env.obs_buffer[BUFFER_LEN..2 * BUFFER_LEN];
-        assert_ne!(obs0_after, obs1_after, "After a move, env 1 obs should differ from env 0");
+        assert_ne!(
+            obs0_after, obs1_after,
+            "After a move, env 1 obs should differ from env 0"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1562,7 +1617,8 @@ mod tests {
             let obs_i = &env.obs_buffer[i * BUFFER_LEN..(i + 1) * BUFFER_LEN];
             assert_eq!(
                 obs_ref, obs_i,
-                "Env {} obs should match env 0 at startpos", i
+                "Env {} obs should match env 0 at startpos",
+                i
             );
         }
 
@@ -1576,7 +1632,8 @@ mod tests {
                 .count();
             assert_eq!(
                 legal_count, 30,
-                "Env {} should have 30 legal moves at startpos, got {}", i, legal_count
+                "Env {} should have 30 legal moves at startpos, got {}",
+                i, legal_count
             );
         }
     }
@@ -1603,7 +1660,10 @@ mod tests {
 
         // Env 1 should still match env 127 (both at startpos)
         let obs_last = &env.obs_buffer[127 * BUFFER_LEN..128 * BUFFER_LEN];
-        assert_eq!(obs1, obs_last, "Unmoved envs should still have matching obs");
+        assert_eq!(
+            obs1, obs_last,
+            "Unmoved envs should still have matching obs"
+        );
     }
 
     #[test]
@@ -1613,15 +1673,18 @@ mod tests {
 
         // Verify the episode counters are at zero before any step
         assert_eq!(
-            env.episodes_completed.load(Ordering::Relaxed), 0,
+            env.episodes_completed.load(Ordering::Relaxed),
+            0,
             "episodes_completed should start at 0"
         );
         assert_eq!(
-            env.episodes_truncated.load(Ordering::Relaxed), 0,
+            env.episodes_truncated.load(Ordering::Relaxed),
+            0,
             "episodes_truncated should start at 0"
         );
         assert_eq!(
-            env.episodes_drawn.load(Ordering::Relaxed), 0,
+            env.episodes_drawn.load(Ordering::Relaxed),
+            0,
             "episodes_drawn should start at 0"
         );
     }
@@ -1659,9 +1722,14 @@ mod tests {
             assert!(
                 idx < SPATIAL_ACTION_SPACE_SIZE,
                 "Spatial index {} out of bounds for move {:?}",
-                idx, mv
+                idx,
+                mv
             );
-            assert!(mask[idx], "Legal move {:?} not set in spatial mask at index {}", mv, idx);
+            assert!(
+                mask[idx],
+                "Legal move {:?} not set in spatial mask at index {}",
+                mv, idx
+            );
         }
     }
 
@@ -1673,7 +1741,8 @@ mod tests {
     fn test_draw_rate_zero_before_any_episodes() {
         let env = make_env(4, 500);
         assert_eq!(
-            env.draw_rate(), 0.0,
+            env.draw_rate(),
+            0.0,
             "draw_rate should be 0.0 when no episodes have completed"
         );
     }
@@ -1703,7 +1772,8 @@ mod tests {
         env.episodes_drawn.store(0, Ordering::Relaxed);
 
         assert_eq!(
-            env.draw_rate(), 0.0,
+            env.draw_rate(),
+            0.0,
             "draw_rate should be 0.0 when no episodes were draws"
         );
     }
@@ -1714,44 +1784,67 @@ mod tests {
 
     #[test]
     fn test_katago_mode_obs_shape() {
-        use crate::katago_observation::{KataGoObservationGenerator, KATAGO_NUM_CHANNELS, KATAGO_BUFFER_LEN};
+        use crate::katago_observation::{
+            KATAGO_BUFFER_LEN, KATAGO_NUM_CHANNELS, KataGoObservationGenerator,
+        };
 
         let n = 2;
         let env = make_env_with_modes(
-            n, 500,
+            n,
+            500,
             ObsMode::KataGo(KataGoObservationGenerator::new()),
             ActionMode::Default(DefaultActionMapper),
         );
 
-        assert_eq!(env.num_channels, KATAGO_NUM_CHANNELS, "KataGo obs should have {} channels", KATAGO_NUM_CHANNELS);
-        assert_eq!(env.obs_buffer.len(), n * KATAGO_BUFFER_LEN, "obs buffer length mismatch for KataGo mode");
-        assert_eq!(env.action_space, ACTION_SPACE_SIZE, "action space should be default");
+        assert_eq!(
+            env.num_channels, KATAGO_NUM_CHANNELS,
+            "KataGo obs should have {} channels",
+            KATAGO_NUM_CHANNELS
+        );
+        assert_eq!(
+            env.obs_buffer.len(),
+            n * KATAGO_BUFFER_LEN,
+            "obs buffer length mismatch for KataGo mode"
+        );
+        assert_eq!(
+            env.action_space, ACTION_SPACE_SIZE,
+            "action space should be default"
+        );
     }
 
     #[test]
     fn test_spatial_mode_mask_size() {
         let n = 2;
         let env = make_env_with_modes(
-            n, 500,
+            n,
+            500,
             ObsMode::Default(DefaultObservationGenerator::new()),
             ActionMode::Spatial(SpatialActionMapper),
         );
 
-        assert_eq!(env.action_space, SPATIAL_ACTION_SPACE_SIZE, "action space should be spatial (11,259)");
         assert_eq!(
-            env.legal_mask_buffer.len(), n * SPATIAL_ACTION_SPACE_SIZE,
+            env.action_space, SPATIAL_ACTION_SPACE_SIZE,
+            "action space should be spatial (11,259)"
+        );
+        assert_eq!(
+            env.legal_mask_buffer.len(),
+            n * SPATIAL_ACTION_SPACE_SIZE,
             "legal mask buffer length mismatch for spatial mode"
         );
-        assert_eq!(env.num_channels, NUM_CHANNELS, "obs channels should be default");
+        assert_eq!(
+            env.num_channels, NUM_CHANNELS,
+            "obs channels should be default"
+        );
     }
 
     #[test]
     fn test_katago_spatial_obs_and_mask_write() {
-        use crate::katago_observation::{KataGoObservationGenerator, KATAGO_NUM_CHANNELS};
+        use crate::katago_observation::{KATAGO_NUM_CHANNELS, KataGoObservationGenerator};
 
         let n = 1;
         let mut env = make_env_with_modes(
-            n, 500,
+            n,
+            500,
             ObsMode::KataGo(KataGoObservationGenerator::new()),
             ActionMode::Spatial(SpatialActionMapper),
         );
@@ -1764,11 +1857,17 @@ mod tests {
 
         // Observation buffer should have some non-zero values (startpos has pieces)
         let obs_nonzero = env.obs_buffer.iter().any(|&v| v != 0.0);
-        assert!(obs_nonzero, "KataGo obs for startpos should have non-zero values");
+        assert!(
+            obs_nonzero,
+            "KataGo obs for startpos should have non-zero values"
+        );
 
         // Mask should have exactly 30 true bits (startpos legal moves)
         let mask_count = env.legal_mask_buffer.iter().filter(|&&x| x).count();
-        assert_eq!(mask_count, 30, "Spatial mask for startpos should have 30 true bits");
+        assert_eq!(
+            mask_count, 30,
+            "Spatial mask for startpos should have 30 true bits"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1837,10 +1936,21 @@ mod tests {
         let moves = collect_first_legal_moves(&mut env);
 
         let panicked = env.apply_moves(&moves);
-        assert_eq!(panicked, 0, "No environments should panic in normal operation");
+        assert_eq!(
+            panicked, 0,
+            "No environments should panic in normal operation"
+        );
         for i in 0..4 {
-            assert!(!env.terminated_buffer[i], "env {} should not be terminated", i);
-            assert!(!env.truncated_buffer[i], "env {} should not be truncated", i);
+            assert!(
+                !env.terminated_buffer[i],
+                "env {} should not be terminated",
+                i
+            );
+            assert!(
+                !env.truncated_buffer[i],
+                "env {} should not be truncated",
+                i
+            );
         }
     }
 
@@ -1860,8 +1970,14 @@ mod tests {
         TEST_PANIC_AT_ENV.store(usize::MAX, Ordering::SeqCst);
 
         assert_eq!(panicked, 1, "Exactly one environment should have panicked");
-        assert!(env.terminated_buffer[2], "Panicked env should be marked terminated");
-        assert_eq!(env.reward_buffer[2], 0.0, "Panicked env should have zero reward");
+        assert!(
+            env.terminated_buffer[2],
+            "Panicked env should be marked terminated"
+        );
+        assert_eq!(
+            env.reward_buffer[2], 0.0,
+            "Panicked env should have zero reward"
+        );
 
         for i in [0, 1, 3] {
             assert!(
@@ -1908,11 +2024,14 @@ mod tests {
 
     #[test]
     fn test_katago_spatial_buffer_dimensions() {
-        use crate::katago_observation::{KataGoObservationGenerator, KATAGO_NUM_CHANNELS, KATAGO_BUFFER_LEN};
+        use crate::katago_observation::{
+            KATAGO_BUFFER_LEN, KATAGO_NUM_CHANNELS, KataGoObservationGenerator,
+        };
 
         let num_envs = 4;
         let env = make_env_with_modes(
-            num_envs, 500,
+            num_envs,
+            500,
             ObsMode::KataGo(KataGoObservationGenerator::new()),
             ActionMode::Spatial(SpatialActionMapper),
         );
@@ -1920,26 +2039,30 @@ mod tests {
         assert_eq!(env.num_channels, KATAGO_NUM_CHANNELS);
         assert_eq!(env.action_space, SPATIAL_ACTION_SPACE_SIZE);
         assert_eq!(
-            env.obs_buffer.len(), num_envs * KATAGO_BUFFER_LEN,
+            env.obs_buffer.len(),
+            num_envs * KATAGO_BUFFER_LEN,
             "obs_buffer should be num_envs * KATAGO_BUFFER_LEN"
         );
         assert_eq!(
-            env.legal_mask_buffer.len(), num_envs * SPATIAL_ACTION_SPACE_SIZE,
+            env.legal_mask_buffer.len(),
+            num_envs * SPATIAL_ACTION_SPACE_SIZE,
             "legal_mask_buffer should be num_envs * SPATIAL_ACTION_SPACE_SIZE"
         );
         assert_eq!(
-            env.terminal_obs_buffer.len(), num_envs * KATAGO_BUFFER_LEN,
+            env.terminal_obs_buffer.len(),
+            num_envs * KATAGO_BUFFER_LEN,
             "terminal_obs_buffer should be num_envs * KATAGO_BUFFER_LEN"
         );
     }
 
     #[test]
     fn test_katago_spatial_write_obs_and_mask() {
-        use crate::katago_observation::{KataGoObservationGenerator, KATAGO_BUFFER_LEN};
+        use crate::katago_observation::{KATAGO_BUFFER_LEN, KataGoObservationGenerator};
 
         let num_envs = 2;
         let mut env = make_env_with_modes(
-            num_envs, 500,
+            num_envs,
+            500,
             ObsMode::KataGo(KataGoObservationGenerator::new()),
             ActionMode::Spatial(SpatialActionMapper),
         );
@@ -1964,9 +2087,13 @@ mod tests {
         );
 
         // Env 1 mask should still be all-false (not yet written)
-        let mask_env1 = &env.legal_mask_buffer[SPATIAL_ACTION_SPACE_SIZE..2 * SPATIAL_ACTION_SPACE_SIZE];
+        let mask_env1 =
+            &env.legal_mask_buffer[SPATIAL_ACTION_SPACE_SIZE..2 * SPATIAL_ACTION_SPACE_SIZE];
         let env1_legal = mask_env1.iter().filter(|&&x| x).count();
-        assert_eq!(env1_legal, 0, "Env 1 mask should be all-false before write_obs_and_mask");
+        assert_eq!(
+            env1_legal, 0,
+            "Env 1 mask should be all-false before write_obs_and_mask"
+        );
     }
 
     #[test]
@@ -1978,7 +2105,8 @@ mod tests {
 
         let num_envs = 4;
         let mut env = make_env_with_modes(
-            num_envs, 500,
+            num_envs,
+            500,
             ObsMode::KataGo(KataGoObservationGenerator::new()),
             ActionMode::Spatial(SpatialActionMapper),
         );
@@ -1993,25 +2121,37 @@ mod tests {
 
         // apply_moves should return 0 panics
         let panicked = env.apply_moves(&moves);
-        assert_eq!(panicked, 0, "No environments should panic with KataGo+Spatial");
+        assert_eq!(
+            panicked, 0,
+            "No environments should panic with KataGo+Spatial"
+        );
 
         // After one step, no env should be terminated or truncated
         for i in 0..num_envs {
-            assert!(!env.terminated_buffer[i], "env {} should not be terminated after one move", i);
-            assert!(!env.truncated_buffer[i], "env {} should not be truncated after one move", i);
+            assert!(
+                !env.terminated_buffer[i],
+                "env {} should not be terminated after one move",
+                i
+            );
+            assert!(
+                !env.truncated_buffer[i],
+                "env {} should not be truncated after one move",
+                i
+            );
         }
     }
 
     #[test]
     fn test_katago_spatial_multi_step_simulation() {
-        use crate::katago_observation::{KataGoObservationGenerator, KATAGO_BUFFER_LEN};
+        use crate::katago_observation::{KATAGO_BUFFER_LEN, KataGoObservationGenerator};
 
         let _lock = TEST_PANIC_MUTEX.lock().unwrap();
         TEST_PANIC_AT_ENV.store(usize::MAX, Ordering::SeqCst);
 
         let num_envs = 2;
         let mut env = make_env_with_modes(
-            num_envs, 500,
+            num_envs,
+            500,
             ObsMode::KataGo(KataGoObservationGenerator::new()),
             ActionMode::Spatial(SpatialActionMapper),
         );
@@ -2028,12 +2168,16 @@ mod tests {
 
             // Buffer dimensions should remain correct throughout
             assert_eq!(
-                env.obs_buffer.len(), num_envs * KATAGO_BUFFER_LEN,
-                "obs_buffer size changed at step {}", step
+                env.obs_buffer.len(),
+                num_envs * KATAGO_BUFFER_LEN,
+                "obs_buffer size changed at step {}",
+                step
             );
             assert_eq!(
-                env.legal_mask_buffer.len(), num_envs * SPATIAL_ACTION_SPACE_SIZE,
-                "legal_mask_buffer size changed at step {}", step
+                env.legal_mask_buffer.len(),
+                num_envs * SPATIAL_ACTION_SPACE_SIZE,
+                "legal_mask_buffer size changed at step {}",
+                step
             );
         }
     }

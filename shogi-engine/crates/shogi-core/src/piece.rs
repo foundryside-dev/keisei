@@ -1,5 +1,5 @@
-use std::num::NonZeroU8;
 use crate::types::{Color, PieceType};
+use std::num::NonZeroU8;
 
 /// A Shogi piece packed into a NonZeroU8.
 ///
@@ -13,12 +13,12 @@ pub struct Piece(NonZeroU8);
 
 impl Piece {
     pub fn new(piece_type: PieceType, color: Color, promoted: bool) -> Piece {
-        let mut val = piece_type as u8;          // bits [3:0]
+        let mut val = piece_type as u8; // bits [3:0]
         if color == Color::White {
-            val |= 0x10;                          // bit 4
+            val |= 0x10; // bit 4
         }
         if promoted {
-            val |= 0x20;                          // bit 5
+            val |= 0x20; // bit 5
         }
         Piece(NonZeroU8::new(val).unwrap())
     }
@@ -34,8 +34,7 @@ impl Piece {
     }
 
     pub fn piece_type(self) -> PieceType {
-        PieceType::from_u8(self.0.get() & 0x0F)
-            .expect("invalid piece type in Piece encoding")
+        PieceType::from_u8(self.0.get() & 0x0F).expect("invalid piece type in Piece encoding")
     }
 
     pub fn color(self) -> Color {
@@ -184,9 +183,14 @@ mod tests {
         let mut seen = std::collections::HashSet::new();
         for &color in &[Color::Black, Color::White] {
             for &pt in &[
-                PieceType::Pawn, PieceType::Lance, PieceType::Knight,
-                PieceType::Silver, PieceType::Gold, PieceType::Bishop,
-                PieceType::Rook, PieceType::King,
+                PieceType::Pawn,
+                PieceType::Lance,
+                PieceType::Knight,
+                PieceType::Silver,
+                PieceType::Gold,
+                PieceType::Bishop,
+                PieceType::Rook,
+                PieceType::King,
             ] {
                 for &promoted in &[false, true] {
                     if promoted && !pt.can_promote() {
@@ -209,14 +213,23 @@ mod tests {
     #[test]
     fn test_unpromote_on_unpromoted_is_identity() {
         for &pt in &[
-            PieceType::Pawn, PieceType::Lance, PieceType::Knight,
-            PieceType::Silver, PieceType::Gold, PieceType::Bishop,
-            PieceType::Rook, PieceType::King,
+            PieceType::Pawn,
+            PieceType::Lance,
+            PieceType::Knight,
+            PieceType::Silver,
+            PieceType::Gold,
+            PieceType::Bishop,
+            PieceType::Rook,
+            PieceType::King,
         ] {
             for &color in &[Color::Black, Color::White] {
                 let base = Piece::new(pt, color, false);
                 let unp = base.unpromote();
-                assert_eq!(unp, base, "unpromote on unpromoted {:?} {:?} should be identity", color, pt);
+                assert_eq!(
+                    unp, base,
+                    "unpromote on unpromoted {:?} {:?} should be identity",
+                    color, pt
+                );
             }
         }
     }
@@ -226,9 +239,21 @@ mod tests {
     fn test_piece_debug_format() {
         let piece = Piece::new(PieceType::Rook, Color::White, true);
         let debug = format!("{:?}", piece);
-        assert!(debug.contains("Rook"), "debug should contain piece type: {}", debug);
-        assert!(debug.contains("White"), "debug should contain color: {}", debug);
-        assert!(debug.contains("+"), "debug should contain + for promoted: {}", debug);
+        assert!(
+            debug.contains("Rook"),
+            "debug should contain piece type: {}",
+            debug
+        );
+        assert!(
+            debug.contains("White"),
+            "debug should contain color: {}",
+            debug
+        );
+        assert!(
+            debug.contains("+"),
+            "debug should contain + for promoted: {}",
+            debug
+        );
     }
 
     /// from_u8 → to_u8 roundtrip for all valid pieces.
@@ -236,9 +261,14 @@ mod tests {
     fn test_from_u8_to_u8_roundtrip_exhaustive() {
         for &color in &[Color::Black, Color::White] {
             for &pt in &[
-                PieceType::Pawn, PieceType::Lance, PieceType::Knight,
-                PieceType::Silver, PieceType::Gold, PieceType::Bishop,
-                PieceType::Rook, PieceType::King,
+                PieceType::Pawn,
+                PieceType::Lance,
+                PieceType::Knight,
+                PieceType::Silver,
+                PieceType::Gold,
+                PieceType::Bishop,
+                PieceType::Rook,
+                PieceType::King,
             ] {
                 for &promoted in &[false, true] {
                     if promoted && !pt.can_promote() {

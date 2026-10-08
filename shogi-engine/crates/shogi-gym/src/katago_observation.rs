@@ -10,7 +10,7 @@
 use pyo3::prelude::*;
 use shogi_core::{Color, GameState};
 
-use crate::observation::{generate_base_channels, ObservationGenerator};
+use crate::observation::{ObservationGenerator, generate_base_channels};
 
 pub const KATAGO_NUM_CHANNELS: usize = 50;
 pub const KATAGO_NUM_SQUARES: usize = 81;
@@ -54,7 +54,11 @@ impl ObservationGenerator for KataGoObservationGenerator {
 
         // --- Channels 44-47: Repetition count (binary planes) ---
         let current_hash = pos.hash;
-        let raw_count = state.repetition_map.get(&current_hash).copied().unwrap_or(0);
+        let raw_count = state
+            .repetition_map
+            .get(&current_hash)
+            .copied()
+            .unwrap_or(0);
         // raw_count starts at 1 for the initial position (see GameState::from_position
         // which does repetition_map.insert(hash, 1)). After each return to the same
         // position, make_move increments it. So:
@@ -66,7 +70,7 @@ impl ObservationGenerator for KataGoObservationGenerator {
         // Subtract 1 to get "number of prior repetitions":
         let prior_reps = raw_count.saturating_sub(1);
         // Channel 44 = 1 prior rep, channel 45 = 2, channel 46 = 3, channel 47 = 4+
-        if prior_reps >= 1 && prior_reps <= 3 {
+        if (1..=3).contains(&prior_reps) {
             let ch = 44 + (prior_reps as usize - 1);
             let start = ch * KATAGO_NUM_SQUARES;
             buffer[start..start + KATAGO_NUM_SQUARES].fill(1.0);
@@ -134,7 +138,7 @@ mod tests {
     #[test]
     fn test_katago_startpos_pieces_match_default() {
         // Channels 0-27 should be identical to DefaultObservationGenerator
-        use crate::observation::{DefaultObservationGenerator, BUFFER_LEN};
+        use crate::observation::{BUFFER_LEN, DefaultObservationGenerator};
 
         let katago_gen = make_gen();
         let default_gen = DefaultObservationGenerator::new();
@@ -153,7 +157,8 @@ mod tests {
                     katago_buf[ch * 81 + sq],
                     default_buf[ch * 81 + sq],
                     "Mismatch at ch={}, sq={} (piece planes)",
-                    ch, sq
+                    ch,
+                    sq
                 );
             }
         }
@@ -165,7 +170,8 @@ mod tests {
                     katago_buf[ch * 81 + sq],
                     default_buf[ch * 81 + sq],
                     "Mismatch at ch={}, sq={} (hand/meta planes)",
-                    ch, sq
+                    ch,
+                    sq
                 );
             }
         }
@@ -221,9 +227,11 @@ mod tests {
             let start = ch * 81;
             for sq in 0..81 {
                 assert_eq!(
-                    buf[start + sq], 0.0,
+                    buf[start + sq],
+                    0.0,
                     "ch{}[{}] should be 0.0 at startpos (no prior repetitions)",
-                    ch, sq
+                    ch,
+                    sq
                 );
             }
         }
@@ -238,12 +246,21 @@ mod tests {
 
         let start44 = 44 * 81;
         for sq in 0..81 {
-            assert_eq!(buf[start44 + sq], 1.0, "ch44[{}] should be 1.0 after 1 repetition", sq);
+            assert_eq!(
+                buf[start44 + sq],
+                1.0,
+                "ch44[{}] should be 1.0 after 1 repetition",
+                sq
+            );
         }
 
         for ch in 45..=47 {
             let start = ch * 81;
-            assert_eq!(buf[start], 0.0, "ch{}[0] should be 0.0 after 1 repetition", ch);
+            assert_eq!(
+                buf[start], 0.0,
+                "ch{}[0] should be 0.0 after 1 repetition",
+                ch
+            );
         }
     }
 
@@ -283,7 +300,12 @@ mod tests {
         assert_eq!(buf[start47], 1.0, "ch47 should be 1.0 after 4+ repetitions");
 
         for ch in 44..=46 {
-            assert_eq!(buf[ch * 81], 0.0, "ch{} should be 0.0 after 4 repetitions", ch);
+            assert_eq!(
+                buf[ch * 81],
+                0.0,
+                "ch{} should be 0.0 after 4 repetitions",
+                ch
+            );
         }
     }
 
@@ -311,9 +333,11 @@ mod tests {
                 );
             } else {
                 assert_eq!(
-                    active_channels.len(), 1,
+                    active_channels.len(),
+                    1,
                     "Exactly one repetition channel should be active at reps={}, got {:?}",
-                    reps, active_channels
+                    reps,
+                    active_channels
                 );
             }
         }
@@ -332,7 +356,12 @@ mod tests {
 
         let start48 = 48 * 81;
         for sq in 0..81 {
-            assert_eq!(buf[start48 + sq], 0.0, "ch48[{}] should be 0.0 when not in check", sq);
+            assert_eq!(
+                buf[start48 + sq],
+                0.0,
+                "ch48[{}] should be 0.0 when not in check",
+                sq
+            );
         }
     }
 
@@ -360,14 +389,22 @@ mod tests {
         pos.hash = pos.compute_hash();
 
         let state = GameState::from_position(pos, 500);
-        assert!(state.is_in_check(), "Black king should be in check from White rook");
+        assert!(
+            state.is_in_check(),
+            "Black king should be in check from White rook"
+        );
 
         let mut buf = make_buffer();
         obs_gen.generate(&state, Color::Black, &mut buf);
 
         let start48 = 48 * 81;
         for sq in 0..81 {
-            assert_eq!(buf[start48 + sq], 1.0, "ch48[{}] should be 1.0 when in check", sq);
+            assert_eq!(
+                buf[start48 + sq],
+                1.0,
+                "ch48[{}] should be 1.0 when in check",
+                sq
+            );
         }
     }
 
@@ -402,7 +439,12 @@ mod tests {
 
         let start48 = 48 * 81;
         for sq in 0..81 {
-            assert_eq!(buf[start48 + sq], 1.0, "ch48[{}] should be 1.0 for White in check", sq);
+            assert_eq!(
+                buf[start48 + sq],
+                1.0,
+                "ch48[{}] should be 1.0 for White in check",
+                sq
+            );
         }
     }
 
@@ -639,10 +681,7 @@ mod tests {
             .iter()
             .filter(|&&v| v != 0.0)
             .count();
-        assert_eq!(
-            nonzero_check, 0,
-            "No check on minimal board"
-        );
+        assert_eq!(nonzero_check, 0, "No check on minimal board");
 
         // Reserved channel (49) should be all zero
         let reserved_start = 49 * 81;
@@ -651,10 +690,7 @@ mod tests {
             .iter()
             .filter(|&&v| v != 0.0)
             .count();
-        assert_eq!(
-            nonzero_reserved, 0,
-            "Reserved channel should be all zero"
-        );
+        assert_eq!(nonzero_reserved, 0, "Reserved channel should be all zero");
     }
 
     /// Buffer length mismatch should panic.
