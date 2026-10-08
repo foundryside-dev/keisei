@@ -11,10 +11,7 @@ import torch
 
 from keisei.config import AppConfig, DisplayConfig, LeagueConfig, ModelConfig, TrainingConfig
 from keisei.training.katago_loop import KataGoTrainingLoop
-
-from tests.test_katago_loop import _make_config, _make_mock_katago_vecenv
-
-import copy
+from tests.test_katago_loop import _make_mock_katago_vecenv
 
 pytestmark = pytest.mark.integration
 

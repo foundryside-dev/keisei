@@ -92,7 +92,8 @@ class HistoricalGauntlet:
         # Drop trait releases OS resources when the Python reference is collected.
         if vecenv is None:
             from shogi_gym import VecEnv
-            vecenv = VecEnv(
+            # Native constructor supports these modes; its bundled stub omits them.
+            vecenv = VecEnv(  # type: ignore[call-arg]
                 num_envs=self.num_envs,
                 max_ply=self.max_ply,
                 observation_mode="katago",

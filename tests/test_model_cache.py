@@ -1,7 +1,6 @@
 """Tests for OpponentStore LRU model cache."""
 
 import pytest
-import torch
 
 from keisei.db import init_db
 from keisei.training.model_registry import build_model
@@ -60,7 +59,7 @@ class TestLoadOpponentCached:
         assert store.cache_size() == 3
 
         # First entry is no longer cached — reloading gives a new object
-        m_fresh = store.load_opponent_cached(entries[0], device="cpu", max_cached=3)
+        store.load_opponent_cached(entries[0], device="cpu", max_cached=3)
         # Can't check identity against evicted object, but cache size should still be 3
         assert store.cache_size() == 3
 

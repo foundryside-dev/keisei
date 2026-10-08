@@ -13,18 +13,12 @@ import os
 import signal
 import threading
 import time
-from pathlib import Path
 from typing import Any
 
 import numpy as np
 
-logger = logging.getLogger(__name__)
-
-import torch
-
 from keisei.db import _connect
 from keisei.db.showcase import (
-    _now_iso,
     claim_next_match,
     cleanup_orphaned_games,
     complete_queue_entry,
@@ -33,7 +27,6 @@ from keisei.db.showcase import (
     mark_game_completed,
     queue_match,
     read_queue,
-    update_queue_speed,
     write_heartbeat,
     write_showcase_move,
 )
@@ -41,9 +34,10 @@ from keisei.showcase.heatmap import build_heatmap
 from keisei.showcase.inference import (
     ModelCache,
     enforce_cpu_only,
-    load_model_for_showcase,
     run_inference,
 )
+
+logger = logging.getLogger(__name__)
 
 MAX_PLY = 512
 SPEED_DELAYS = {"slow": 4.0, "normal": 2.0, "fast": 0.5}
@@ -167,7 +161,7 @@ class ShowcaseRunner:
                 probs[legal] = legal_probs
 
                 top_indices = np.argsort(probs)[::-1][:3]
-                top_candidates = []
+                top_candidates: list[dict[str, Any]] = []
                 for idx in top_indices:
                     if probs[idx] > 0.001:
                         top_candidates.append({"action": int(idx), "probability": round(float(probs[idx]), 4)})

@@ -16,8 +16,8 @@ import pytest
 
 from keisei.config import ConcurrencyConfig, MatchSchedulerConfig
 from keisei.db import init_db
-from keisei.training.match_scheduler import MatchScheduler
 from keisei.training.concurrent_matches import ConcurrentMatchPool
+from keisei.training.match_scheduler import MatchScheduler
 from keisei.training.opponent_store import OpponentEntry, OpponentStore, Role, compute_elo_update
 from keisei.training.tournament import LeagueTournament, majority_wins_result
 

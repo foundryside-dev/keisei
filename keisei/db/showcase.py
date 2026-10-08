@@ -133,7 +133,12 @@ def read_queue(db_path: str) -> list[dict[str, Any]]:
 def cancel_match(db_path: str, queue_id: int) -> None:
     conn = _connect(db_path)
     try:
-        _retry_write(conn, "UPDATE showcase_queue SET status = 'cancelled', completed_at = ? WHERE id = ? AND status = 'pending'", (_now_iso(), queue_id))
+        _retry_write(
+            conn,
+            "UPDATE showcase_queue SET status = 'cancelled', completed_at = ? WHERE id = ? AND "
+            "status = 'pending'",
+            (_now_iso(), queue_id),
+        )
     finally:
         conn.close()
 
@@ -295,7 +300,8 @@ def cleanup_orphaned_games(db_path: str, stale_after_s: float = 60.0) -> int:
             except (ValueError, TypeError):
                 pass
         cursor = conn.execute(
-            "UPDATE showcase_games SET status = 'abandoned', abandon_reason = 'crash_recovery', completed_at = ? WHERE status = 'in_progress'",
+            "UPDATE showcase_games SET status = 'abandoned', abandon_reason = 'crash_recovery', "
+            "completed_at = ? WHERE status = 'in_progress'",
             (now,))
         count = cursor.rowcount
         conn.execute("UPDATE showcase_queue SET status = 'cancelled', completed_at = ? WHERE status = 'running'", (now,))

@@ -6,8 +6,6 @@ from typing import Any, NamedTuple
 
 import torch.nn as nn
 
-from keisei.training.models.base import BaseModel
-from keisei.training.models.katago_base import KataGoBaseModel
 from keisei.training.models.mlp import MLPModel, MLPParams
 from keisei.training.models.resnet import ResNetModel, ResNetParams
 from keisei.training.models.se_resnet import SEResNetModel, SEResNetParams

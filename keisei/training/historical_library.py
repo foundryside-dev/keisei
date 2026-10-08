@@ -7,7 +7,7 @@ import math
 from dataclasses import dataclass
 
 from keisei.config import HistoricalLibraryConfig
-from keisei.training.opponent_store import EntryStatus, OpponentStore
+from keisei.training.opponent_store import EntryStatus, OpponentEntry, OpponentStore
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +71,7 @@ class HistoricalLibrary:
         used_ids: set[int] = set()
         enough_candidates = len(candidates) >= self.config.slots
         # slot_assignments[i] = (entry, mode) or None
-        slot_assignments: list[tuple[object, str] | None] = [None] * len(targets)
+        slot_assignments: list[tuple[OpponentEntry, str] | None] = [None] * len(targets)
 
         # Pass 1: assign within-threshold candidates
         for i, target in enumerate(targets):
@@ -97,7 +97,7 @@ class HistoricalLibrary:
             slot_assignments[i] = (best, "fallback")
 
         # Snapshot current slots so we can detect re-pointing (§13.4).
-        old_slots = {
+        old_slots: dict[int, int | None] = {
             s["slot_index"]: s["entry_id"]
             for s in self.store.get_historical_slots()
         }
@@ -105,6 +105,7 @@ class HistoricalLibrary:
         # Write all slots to DB
         for i, target in enumerate(targets):
             assignment = slot_assignments[i]
+            new_entry_id: int | None
             if assignment is None:
                 new_entry_id = None
                 self.store.upsert_historical_slot(
@@ -130,6 +131,7 @@ class HistoricalLibrary:
                 new_entry_id is not None or old_entry_id is not None
             ):
                 log_id = new_entry_id if new_entry_id is not None else old_entry_id
+                assert log_id is not None
                 self.store.log_transition(
                     entry_id=log_id,
                     from_role=None,
@@ -190,7 +192,7 @@ class HistoricalLibrary:
             for i in range(num_slots)
         ]
 
-    def _get_candidates(self) -> list:
+    def _get_candidates(self) -> list[OpponentEntry]:
         """Get all entries that could serve as historical milestones.
 
         Prefers retired/archived entries (stable), but includes active
@@ -201,7 +203,7 @@ class HistoricalLibrary:
         # Sort: prefer retired/archived (stable) over active.
         # All entries are OpponentEntry instances from list_all_entries() and
         # always have a .status attribute — no getattr guard needed.
-        def stability_key(e: object) -> int:
+        def stability_key(e: OpponentEntry) -> int:
             if e.status in (EntryStatus.RETIRED, EntryStatus.ARCHIVED):
                 return 0
             return 1
@@ -211,10 +213,10 @@ class HistoricalLibrary:
 
     @staticmethod
     def _snap_to_nearest(
-        target: int, candidates: list, used_ids: set[int]
-    ) -> object | None:
+        target: int, candidates: list[OpponentEntry], used_ids: set[int]
+    ) -> OpponentEntry | None:
         """Find the candidate closest to target that hasn't been used yet."""
-        best = None
+        best: OpponentEntry | None = None
         best_dist = float("inf")
         for c in candidates:
             if c.id in used_ids:

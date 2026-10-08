@@ -11,7 +11,6 @@ from starlette.testclient import TestClient
 
 from keisei.db import init_db
 
-
 # ---------------------------------------------------------------------------
 # WebSocket test helper
 # ---------------------------------------------------------------------------

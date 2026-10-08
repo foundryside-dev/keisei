@@ -16,7 +16,7 @@ from keisei.config import (
 from keisei.db import init_db
 from keisei.training.historical_gauntlet import HistoricalGauntlet
 from keisei.training.match_scheduler import MatchScheduler
-from keisei.training.opponent_store import EloColumn, OpponentStore, Role, EntryStatus
+from keisei.training.opponent_store import EloColumn, EntryStatus, OpponentStore, Role
 from keisei.training.tiered_pool import TieredPool
 
 pytestmark = pytest.mark.integration

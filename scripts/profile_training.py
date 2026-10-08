@@ -33,12 +33,11 @@ from keisei.config import load_config  # noqa: E402
 from keisei.training.katago_loop import (  # noqa: E402
     KataGoTrainingLoop,
     _compute_value_cats,
+    cleanup_distributed,
     get_distributed_context,
     seed_all_ranks,
     setup_distributed,
-    cleanup_distributed,
 )
-
 
 logging.basicConfig(
     level=logging.INFO,
@@ -164,7 +163,7 @@ def run_baseline(loop: KataGoTrainingLoop, steps: int, num_warmup: int = 1) -> d
 
         # --- Bootstrap + PPO Update ---
         t_update_start = time.perf_counter()
-        losses = run_ppo_update(loop, obs)
+        run_ppo_update(loop, obs)
         loop.ppo.flush_timings()
 
         if device.type == "cuda":
@@ -212,7 +211,7 @@ def run_profiler(
     output_dir: Path,
 ) -> None:
     """Run one epoch under torch.profiler for op-level detail."""
-    from torch.profiler import profile, ProfilerActivity, schedule
+    from torch.profiler import ProfilerActivity, profile, schedule
 
     device = loop.device
     activities = [ProfilerActivity.CPU]
@@ -240,7 +239,7 @@ def run_profiler(
     ) as prof:
         for epoch_pass in range(2):
             obs, legal_masks = run_one_epoch_rollout(loop, obs, legal_masks, steps)
-            losses = run_ppo_update(loop, obs)
+            run_ppo_update(loop, obs)
             prof.step()
 
     logger.info("Chrome trace saved to: %s", trace_path)

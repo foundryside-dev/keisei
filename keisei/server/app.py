@@ -18,7 +18,6 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from keisei.db import (
-    _connect,
     init_db,
     read_elo_history,
     read_game_snapshots,
@@ -32,12 +31,22 @@ from keisei.db import (
 )
 from keisei.db.showcase import (
     cancel_match as showcase_cancel_match,
+)
+from keisei.db.showcase import (
     queue_match as showcase_queue_match,
+)
+from keisei.db.showcase import (
     read_active_showcase_game,
     read_all_showcase_moves,
-    read_heartbeat as showcase_read_heartbeat,
-    read_queue as showcase_read_queue,
     read_showcase_moves_since,
+)
+from keisei.db.showcase import (
+    read_heartbeat as showcase_read_heartbeat,
+)
+from keisei.db.showcase import (
+    read_queue as showcase_read_queue,
+)
+from keisei.db.showcase import (
     update_queue_speed as showcase_update_speed,
 )
 

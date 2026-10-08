@@ -8,7 +8,7 @@ import torch
 from keisei.training.model_registry import validate_model_params
 from keisei.training.models.mlp import MLPModel, MLPParams
 from keisei.training.models.resnet import ResNetModel, ResNetParams
-from keisei.training.models.transformer import TransformerModel, TransformerParams
+from keisei.training.models.transformer import TransformerParams
 
 # ===================================================================
 # M1 — ResNet with num_layers=0

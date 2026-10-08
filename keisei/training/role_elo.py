@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import cast
 
 from keisei.config import RoleEloConfig
 from keisei.training.opponent_store import (
@@ -148,7 +149,7 @@ class RoleEloTracker:
     @staticmethod
     def _get_entry_role_elo(entry: OpponentEntry, column: EloColumn) -> float:
         """Read the role-specific Elo from an entry."""
-        return getattr(entry, column.value)
+        return cast(float, getattr(entry, column.value))
 
     @staticmethod
     def determine_match_context(entry_a: OpponentEntry, entry_b: OpponentEntry) -> str:
