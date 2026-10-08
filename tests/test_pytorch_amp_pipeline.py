@@ -274,7 +274,7 @@ class TestGradScalerCheckpointRoundTrip:
         """GradScaler state (scale factor, growth tracker) should survive checkpoint."""
         model = _small_model()
         optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-        scaler = GradScaler(enabled=True)
+        scaler = GradScaler("cpu", enabled=True, init_scale=128.0, growth_interval=2)
 
         # Advance scaler state by simulating a few steps
         for _ in range(5):
@@ -297,8 +297,8 @@ class TestGradScalerCheckpointRoundTrip:
         # Fresh scaler with default state
         fresh_model = _small_model()
         fresh_opt = torch.optim.Adam(fresh_model.parameters(), lr=1e-3)
-        fresh_scaler = GradScaler(enabled=True)
-        assert fresh_scaler.get_scale() != original_scale or original_scale == fresh_scaler.get_scale()
+        fresh_scaler = GradScaler("cpu", enabled=True)
+        assert fresh_scaler.get_scale() != original_scale
 
         load_checkpoint(path, fresh_model, fresh_opt, grad_scaler=fresh_scaler)
 
@@ -319,7 +319,7 @@ class TestGradScalerCheckpointRoundTrip:
 
         fresh_model = _small_model()
         fresh_opt = torch.optim.Adam(fresh_model.parameters(), lr=1e-3)
-        fresh_scaler = GradScaler(enabled=True)
+        fresh_scaler = GradScaler("cpu", enabled=True)
         default_scale = fresh_scaler.get_scale()
 
         load_checkpoint(path, fresh_model, fresh_opt, grad_scaler=fresh_scaler)
