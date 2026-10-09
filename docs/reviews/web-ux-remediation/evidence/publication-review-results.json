@@ -1,0 +1,32 @@
+{
+  "review": {
+    "forwardAtTail": {
+      "label": "Live",
+      "url": "http://127.0.0.1:8767/?view=showcase"
+    },
+    "invalid": {
+      "retry": 0,
+      "message": "This link has an invalid ply. Choose another match to continue.\n\nWatch latest match"
+    },
+    "finished": {
+      "footer": "draw Ply 12 Black head-to-head: 7 wins, 3 losses, 2 draws"
+    },
+    "requestRetry": {
+      "label": "Replay \u00b7 ply 12"
+    }
+  },
+  "append": {
+    "label": "Live",
+    "ply": "Stored ply 13"
+  },
+  "lane-first": {
+    "message": "New game in lane 1",
+    "changes": 1
+  },
+  "lane-completed": "completed lane retained",
+  "lane-second": {
+    "message": "New game in lane 1",
+    "changes": 2,
+    "refreshed": true
+  }
+}

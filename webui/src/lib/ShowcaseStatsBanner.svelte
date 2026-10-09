@@ -56,80 +56,11 @@
 </section>
 
 <style>
-  .stats-banner {
-    display: flex;
-    gap: 12px;
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
-  }
-
-  .stat-card {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-    padding: 12px 16px;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-  }
-
-  .stat-card.highlight {
-    border-color: var(--accent-teal);
-    background: var(--badge-bg-teal);
-  }
-
-  .stat-card.warn {
-    border-color: var(--accent-gold);
-    background: var(--badge-bg-gold);
-  }
-
-  .stat-card.offline {
-    /* Passive — no urgent border treatment. The role="alert" callout in
-       ShowcaseView is the loud signal. The dot is muted via colour rule below. */
-    border-color: var(--border);
-  }
-
-  .stat-value {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 18px;
-    font-weight: 700;
-    color: var(--text-primary);
-    font-family: monospace;
-  }
-
-  .stat-card.highlight .stat-value { color: var(--accent-teal); }
-  .stat-card.warn .stat-value { color: var(--accent-gold); }
-  .stat-card.offline .stat-value { color: var(--text-muted); }
-  .stat-card.offline .dot { background: var(--text-muted); }
-
-  .dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: currentColor;
-  }
-
-  .stat-card.alive .dot {
-    background: var(--accent-teal);
-    box-shadow: 0 0 0 2px rgba(77, 184, 168, 0.25);
-  }
-
-  .stat-label {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
-
-  @media (max-width: 768px) {
-    .stats-banner { padding: 8px 10px; gap: 6px; flex-wrap: wrap; }
-    .stat-card { padding: 8px 10px; min-width: 110px; }
-    .stat-value { font-size: 14px; }
-  }
+  .stats-banner { display:flex; gap:8px 24px; padding:6px 12px; flex-wrap:wrap; border-bottom:1px solid var(--border); font-size:12px; }
+  .stat-card { display:flex; gap:6px; align-items:center; }
+  .stat-value { font-weight:700; color:var(--accent-teal); }
+  .stat-label { color:var(--text-secondary); }
+  .offline .stat-value { color:var(--text-muted); }
+  .warn .stat-value { color:var(--accent-gold); }
+  .dot { display:inline-block; width:6px; height:6px; border-radius:50%; background:currentColor; }
 </style>

@@ -1,6 +1,15 @@
 <script>
   import { historicalLibrary, gauntletResults } from '../stores/league.js'
   import { trainingState } from '../stores/training.js'
+  import { gauntletHistory } from '../stores/gauntletHistory.js'
+  import { onMount } from 'svelte'
+
+  $: {
+    gauntletHistory.setContext($trainingState?.started_at ?? null)
+    gauntletHistory.setLive($gauntletResults)
+  }
+  $: gauntletByEpoch = $gauntletHistory.epochs
+  onMount(() => { if (!gauntletByEpoch.length) gauntletHistory.loadOlder() })
 
   $: currentEpoch = $trainingState?.current_epoch || 0
   $: maxGauntletEpoch = $gauntletResults.length > 0
@@ -10,15 +19,6 @@
     ? currentEpoch - maxGauntletEpoch
     : null
 
-  // Group gauntlet results by epoch (most recent first)
-  $: gauntletByEpoch = (() => {
-    const map = new Map()
-    for (const g of $gauntletResults) {
-      if (!map.has(g.epoch)) map.set(g.epoch, [])
-      map.get(g.epoch).push(g)
-    }
-    return [...map.entries()].sort((a, b) => b[0] - a[0])
-  })()
 </script>
 
 <div class="historical-library">
@@ -58,13 +58,13 @@
     {/if}
   </div>
 
-  {#if gauntletByEpoch.length > 0}
     <div class="gauntlet-section">
-      <h4 class="section-label">Gauntlet Results</h4>
-      {#each gauntletByEpoch.slice(0, 5) as [epoch, results]}
+      <h4 class="section-label">{gauntletByEpoch.length <= 5 ? 'Latest 5 evaluations' : `Evaluations · ${gauntletByEpoch.length} epochs loaded`}</h4>
+      {#if !gauntletByEpoch.length && !$gauntletHistory.loading}<p class="empty">No evaluation results yet.</p>{/if}
+      {#each gauntletByEpoch as [epoch, results] (epoch)}
         <div class="gauntlet-epoch">
           <span class="epoch-header">Epoch {epoch}</span>
-          {#each results as g}
+          {#each results as g (g.id)}
             <div class="gauntlet-row">
               <span class="slot-tag">Slot {g.historical_slot}</span>
               <span class="wld">{g.wins}W {g.losses}L {g.draws}D</span>
@@ -78,8 +78,18 @@
           {/each}
         </div>
       {/each}
+      {#if $gauntletHistory.error}
+        <p role="alert" class="history-status">{$gauntletHistory.error}</p>
+      {/if}
+      {#if $gauntletHistory.hasMore}
+        <button class="load-history" disabled={$gauntletHistory.loading} on:click={() => gauntletHistory.loadOlder()}>
+          {$gauntletHistory.loading ? 'Loading evaluations…' : $gauntletHistory.error ? 'Retry loading older evaluations' : 'Load 5 older evaluations'}
+        </button>
+      {:else if gauntletByEpoch.length}
+        <p class="history-status">End of evaluation history.</p>
+      {/if}
+      <p class="sr-only" role="status">{$gauntletHistory.loading ? 'Loading older evaluations' : `${gauntletByEpoch.length} evaluation epochs loaded`}</p>
     </div>
-  {/if}
 </div>
 
 <style>
@@ -111,4 +121,9 @@
   .elo-delta.positive { color: var(--accent-teal); }
   .elo-delta.negative { color: var(--danger); }
   .empty { color: var(--text-muted); font-size: 12px; text-align: center; padding: 12px; }
+  .load-history { min-height: 44px; padding: 8px 12px; color: var(--text-primary); background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
+  .load-history:disabled { cursor: wait; }
+  .history-status { font-size: 12px; color: var(--text-muted); }
+  td { overflow-wrap: anywhere; }
+  @media (max-width: 600px) { .historical-library { padding: 10px; } th, td { padding: 4px; } .section-label { flex-wrap: wrap; } }
 </style>

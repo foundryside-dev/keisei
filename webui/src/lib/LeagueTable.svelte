@@ -5,6 +5,8 @@
 
   /** Total slots shown in leaderboard (empty ones are placeholders) */
   export let totalSlots = 20
+  export let headingEl = undefined
+  export let onEntryOpen = (id) => focusedEntryId.update(current => current === id ? null : id)
 
   export let roleCapacities = { frontier_static: 5, recent_fixed: 5, dynamic: 10, historical: 5 }
   const ROLE_ORDER = ['frontier_static', 'recent_fixed', 'dynamic', 'historical', 'other']
@@ -76,8 +78,8 @@
     }
   }
 
-  function toggleExpand(id) {
-    focusedEntryId.update(current => current === id ? null : id)
+  function toggleExpand(id, origin) {
+    onEntryOpen(id, origin)
   }
 
   function sortIndicator(col) {
@@ -118,7 +120,7 @@
     const l = wld.get(entry.id)?.l || 0
     const d = wld.get(entry.id)?.d || 0
     const elo = displayElo(entry)
-    const base = `Rank ${entry.rank}: ${entry.display_name || entry.architecture}, ${elo.tag || 'Elo'} ${Math.round(elo.value)}, ${w}W ${l}L ${d}D`
+    const base = `Rank ${entry.rank}: ${entry.display_name || entry.architecture}, entry #${entry.id}, epoch ${entry.created_epoch ?? 'unknown'}, ${elo.tag || 'Elo'} ${Math.round(elo.value)}, ${w}W ${l}L ${d}D`
     const styleInfo = getStyleTooltip(entry.id)
     return styleInfo ? `${base}. Style: ${styleInfo}` : base
   }
@@ -128,7 +130,7 @@
 </script>
 
 <div class="league-table-card">
-  <h2 class="section-header">Elo Leaderboard {#if placeholderCount > 0}<span class="slot-count">{sorted.length} / {totalSlots}</span>{/if}</h2>
+  <h2 class="section-header" tabindex="-1" bind:this={headingEl}>Elo Leaderboard {#if placeholderCount > 0}<span class="slot-count">{sorted.length} / {totalSlots}</span>{/if}</h2>
   <div class="view-toggle" role="radiogroup" aria-label="Leaderboard view">
     <button role="radio" aria-checked={viewMode === 'flat'} tabindex={viewMode === 'flat' ? 0 : -1} on:click={() => viewMode = 'flat'} on:keydown={handleViewToggleKeydown} class:active={viewMode === 'flat'}>Flat</button>
     <button role="radio" aria-checked={viewMode === 'grouped'} tabindex={viewMode === 'grouped' ? 0 : -1} on:click={() => viewMode = 'grouped'} on:keydown={handleViewToggleKeydown} class:active={viewMode === 'grouped'}>Grouped</button>
@@ -192,19 +194,21 @@
                     {ROLE_LABELS[role]?.split(' ').slice(1).join(' ') || role} · {sortedByRole.get(role).length}/{roleCapacities[role] ?? '?'}
                   </th>
                 </tr>
-                {#each sortedByRole.get(role) as entry}
+                {#each sortedByRole.get(role) as entry (entry.id)}
                   <tr
                     class:top={entry.rank === 1}
                     class:focused={$focusedEntryId === entry.id}
                     aria-expanded={$focusedEntryId === entry.id}
                     aria-label={rowAriaLabel(entry)}
-                    on:click={() => toggleExpand(entry.id)}
+                    data-entry-id={entry.id}
+                    on:click={(e) => toggleExpand(entry.id, e.currentTarget)}
                     tabindex="0"
-                    on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleExpand(entry.id) }}}
+                    on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleExpand(entry.id, e.currentTarget) }}}
                   >
                     <td class="num rank">{entry.rank}</td>
                     <td class="name-cell">
                       {entry.display_name || entry.architecture}
+                      <span class="entry-id">#{entry.id}</span>
                       {#if entry.protection_remaining > 0}
                         <span class="protection-badge" title="Protected from retirement for {entry.protection_remaining} more epochs" aria-label="Protected for {entry.protection_remaining} epochs"><span aria-hidden="true">🛡</span> {entry.protection_remaining}</span>
                       {/if}
@@ -240,15 +244,16 @@
               {/if}
             {/each}
           {:else}
-            {#each sorted as entry}
+            {#each sorted as entry (entry.id)}
               <tr
                 class:top={entry.rank === 1}
                 class:focused={$focusedEntryId === entry.id}
                 aria-expanded={$focusedEntryId === entry.id}
                 aria-label={rowAriaLabel(entry)}
-                on:click={() => toggleExpand(entry.id)}
+                data-entry-id={entry.id}
+                    on:click={(e) => toggleExpand(entry.id, e.currentTarget)}
                 tabindex="0"
-                on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleExpand(entry.id) }}}
+                on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleExpand(entry.id, e.currentTarget) }}}
               >
                 <td class="num rank">
                   {#if entry.rank === 1}
@@ -261,6 +266,7 @@
                 <td class="name-cell">
                   <span class="role-badge {getRoleInfo(entry.role).cssClass}" title={getRoleInfo(entry.role).tooltip} aria-label="{getRoleInfo(entry.role).label} tier">{getRoleInfo(entry.role).icon}</span>
                   {entry.display_name || entry.architecture}
+                  <span class="entry-id">#{entry.id}</span>
                   {#if entry.protection_remaining > 0}
                     <span class="protection-badge" title="Protected from retirement for {entry.protection_remaining} more epochs" aria-label="Protected for {entry.protection_remaining} epochs"><span aria-hidden="true">🛡</span> {entry.protection_remaining}</span>
                   {/if}
@@ -324,9 +330,11 @@
   th.wld-col { min-width: 36px; }
 
   .sort-btn {
+    min-width:44px;
     background: none;
     border: none;
-    padding: 0;
+    padding: 4px 0;
+    min-height: 44px;
     cursor: pointer;
     color: var(--text-muted);
     font-size: 13px;
@@ -375,12 +383,12 @@
     border-radius: 3px;
     padding: 1px 0;
   }
-  .role-badge.role-frontier { color: #7b8fa8; }
-  .role-badge.role-recent { color: #c8962e; }
+  .role-badge.role-frontier { color: var(--accent-frontier); }
+  .role-badge.role-recent { color: var(--accent-gold); }
   .role-badge.role-dynamic { color: var(--accent-teal); }
-  .role-badge.role-historical { color: #9b7ec8; }
+  .role-badge.role-historical { color: var(--accent-historical); }
   .role-badge.role-unknown { color: var(--text-muted); }
-  .role-badge.role-retired { color: #888; opacity: 0.6; }
+  .role-badge.role-retired { color: var(--text-muted); }
 
   tr.focused { background: var(--bg-card); }
 
@@ -436,7 +444,7 @@
   }
   .view-toggle button {
     padding: 6px 14px;
-    min-height: 36px;
+    min-height: 44px;
     font-size: 12px;
     font-weight: 600;
     border: 1px solid var(--border);
@@ -485,4 +493,6 @@
   @media (prefers-reduced-motion: reduce) {
     tbody tr { transition: none; }
   }
+  .section-header:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
+  .entry-id { color: var(--text-muted); font-size: 11px; white-space: nowrap; }
 </style>

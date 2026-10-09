@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -15,6 +17,7 @@ from keisei.showcase.inference import (
     enforce_cpu_only,
     load_model_for_showcase,
     run_inference,
+    run_inference_with_evaluation,
 )
 from keisei.training.model_registry import build_model
 
@@ -110,3 +113,44 @@ class TestModelCache:
         cache.get_or_load("e2", str(paths[1]), "resnet", params)
         cache.get_or_load("e3", str(paths[2]), "resnet", params)  # should evict e1
         assert cache.size == 2
+
+@pytest.mark.parametrize("player", ["black", "white"])
+def test_scalar_outcome_preserves_pre_move_perspective(player: str) -> None:
+    model = MagicMock(return_value=(torch.zeros(1, 10), torch.tensor([[0.6]])))
+    _, legacy, evaluation = run_inference_with_evaluation(
+        model, np.zeros((50, 9, 9), dtype=np.float32), "resnet",
+        player=player, position_ply=17,
+    )
+    assert legacy == pytest.approx(0.8)
+    assert evaluation == {
+        "version": 1, "kind": "outcome_score", "score": pytest.approx(0.8),
+        "player": player, "position_ply": 17,
+        "source": {"architecture": "resnet", "contract": "scalar"},
+    }
+    model.assert_called_once()
+
+
+@pytest.mark.parametrize("wdl,score", [([0.2, 0.7, 0.1], 0.55), ([0.0, 1.0, 0.0], 0.5)])
+def test_wdl_outcome_gives_draw_half_credit(wdl: list[float], score: float) -> None:
+    model = MagicMock(return_value=SimpleNamespace(
+        policy_logits=torch.zeros(1, 9, 9, 139),
+        value_logits=torch.tensor([wdl]).log(),
+    ))
+    _, legacy, evaluation = run_inference_with_evaluation(
+        model, np.zeros((50, 9, 9), dtype=np.float32), "se_resnet",
+        player="white", position_ply=3,
+    )
+    assert legacy == pytest.approx(wdl[0])
+    assert evaluation["score"] == pytest.approx(score)
+    assert evaluation["wdl"] == dict(zip(("win", "draw", "loss"), [pytest.approx(x) for x in wdl]))
+    assert evaluation["player"] == "white"
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), 1.1, -1.1])
+def test_invalid_scalar_evaluation_rejected(value: float) -> None:
+    model = MagicMock(return_value=(torch.zeros(1, 10), torch.tensor([[value]])))
+    with pytest.raises(ValueError):
+        run_inference_with_evaluation(
+            model, np.zeros((50, 9, 9), dtype=np.float32), "resnet",
+            player="black", position_ply=0,
+        )

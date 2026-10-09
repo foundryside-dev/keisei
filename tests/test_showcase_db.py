@@ -420,3 +420,27 @@ def test_out_of_order_moves_do_not_rewind_total_ply(db: str) -> None:
             move_time_ms=1,
         )
         assert read_active_showcase_game(db)["total_ply"] == 5
+
+
+def test_evaluation_migration_is_additive_and_idempotent(db: str) -> None:
+    from keisei.db._migrations import _migrate_v8_to_v9
+
+    qid = queue_match(db, "e1", "e2", "normal")
+    gid = create_showcase_game(db, queue_id=qid, entry_id_black="e1", entry_id_white="e2",
+                               elo_black=1500, elo_white=1500, name_black="A", name_white="B")
+    write_showcase_move(db, game_id=gid, ply=1, action_index=1, usi_notation="P-7f",
+                        board_json="[]", hands_json="{}", current_player="white",
+                        in_check=False, value_estimate=0.8, top_candidates="[]", move_time_ms=1)
+    conn = sqlite3.connect(db)
+    conn.execute("ALTER TABLE showcase_moves DROP COLUMN evaluation_json")
+    conn.execute("UPDATE schema_version SET version = 8")
+    conn.commit()
+    conn.close()
+    init_db(db)
+    init_db(db)
+    conn = sqlite3.connect(db)
+    _migrate_v8_to_v9(conn)
+    _migrate_v8_to_v9(conn)
+    assert conn.execute("SELECT value_estimate, evaluation_json FROM showcase_moves").fetchone() == (0.8, None)
+    assert conn.execute("SELECT version FROM schema_version").fetchone()[0] == SCHEMA_VERSION
+    conn.close()

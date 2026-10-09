@@ -3,17 +3,21 @@
   import { notationStyle } from '../stores/notation.js'
   import { toJapanese } from './moveRows.js'
   import NotationToggle from './NotationToggle.svelte'
+  import { validateEvaluation } from './showcaseEvaluation.js'
 
-  $: move = $showcaseDisplayedMove
-  $: scrubbing = $isScrubbing
+  export let displayedMove = undefined
+  export let scrubbing = undefined
+  $: move = displayedMove === undefined ? $showcaseDisplayedMove : displayedMove
+  $: paused = scrubbing === undefined ? $isScrubbing : scrubbing
   $: topCandidates = (() => {
     if (!move?.top_candidates) return []
     try {
-      return typeof move.top_candidates === 'string'
+      const candidates = typeof move.top_candidates === 'string'
         ? JSON.parse(move.top_candidates) : move.top_candidates
+      return Array.isArray(candidates) ? candidates.filter(c => c && Number.isFinite(c.probability)) : []
     } catch { return [] }
   })()
-  $: winProb = move?.value_estimate ?? 0.5
+  $: evaluation = validateEvaluation(move)
 
   // Showcase moves only carry USI strings, so western/usi both render the raw
   // USI; only the japanese style transforms file/rank to Japanese characters.
@@ -26,19 +30,24 @@
   $: lastMoveText = formatMove(move?.usi_notation, $notationStyle)
 </script>
 
-<div class="commentary" class:scrubbing>
+<div class="commentary" class:scrubbing={paused}>
   <h3 class="section-label">
     <span class="title">Commentary</span>
-    {#if scrubbing}<span class="scrub-tag" title="Showing analysis for the selected ply, not the live position">REPLAY</span>{/if}
+    {#if paused}<span class="scrub-tag" title="Showing analysis for the selected ply, not the live position">REPLAY</span>{/if}
     <span class="spacer"></span>
     <NotationToggle />
   </h3>
   <div class="eval-display">
-    <span class="label">Win probability</span>
-    <div class="eval-bar-container">
-      <div class="eval-bar-fill" style="width: {winProb * 100}%"></div>
-    </div>
-    <span class="eval-value">{(winProb * 100).toFixed(1)}%</span>
+    <span class="label">{evaluation.label}</span>
+    {#if evaluation.available}
+      <div class="eval-bar-container" aria-hidden="true">
+        <div class="eval-bar-fill" style="width: {evaluation.blackScore * 100}%"></div>
+      </div>
+      <span class="eval-value">{(evaluation.blackScore * 100).toFixed(1)}%</span>
+      <span class="estimate-note">Model estimate; draws receive half credit. Estimates alternate between the players’ models.</span>
+    {:else}
+      <span class="estimate-note">{evaluation.reason}</span>
+    {/if}
   </div>
   {#if move}
     <div class="last-move">
@@ -50,7 +59,7 @@
       </span>
     </div>
     <div class="candidates">
-      <span class="label">Top candidates</span>
+      <span class="label">Policy preferences before this move</span>
       {#each topCandidates as c, i}
         <div class="candidate" class:chosen={c.usi === move.usi_notation}>
           <span class="rank">{i + 1}.</span>
@@ -85,6 +94,7 @@
     .eval-bar-fill { transition: none; }
   }
   .eval-value { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+  .estimate-note { font-size: 12px; color: var(--text-secondary); line-height: 1.4; }
   .candidates { display: flex; flex-direction: column; gap: 2px; }
   .candidate { display: flex; gap: 6px; font-size: 13px; padding: 2px 4px; border-radius: 3px; }
   .candidate.chosen { background: var(--tab-active-bg); }

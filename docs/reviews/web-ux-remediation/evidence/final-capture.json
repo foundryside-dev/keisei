@@ -1,0 +1,86 @@
+[
+  {
+    "view": "training",
+    "theme": "dark",
+    "width": 1440,
+    "height": 900,
+    "undersizedTargets": []
+  },
+  {
+    "view": "training",
+    "theme": "dark",
+    "width": 390,
+    "height": 844,
+    "undersizedTargets": []
+  },
+  {
+    "view": "training",
+    "theme": "light",
+    "width": 1440,
+    "height": 900,
+    "undersizedTargets": []
+  },
+  {
+    "view": "training",
+    "theme": "light",
+    "width": 390,
+    "height": 844,
+    "undersizedTargets": []
+  },
+  {
+    "view": "league",
+    "theme": "dark",
+    "width": 1440,
+    "height": 900,
+    "undersizedTargets": []
+  },
+  {
+    "view": "league",
+    "theme": "dark",
+    "width": 390,
+    "height": 844,
+    "undersizedTargets": []
+  },
+  {
+    "view": "league",
+    "theme": "light",
+    "width": 1440,
+    "height": 900,
+    "undersizedTargets": []
+  },
+  {
+    "view": "league",
+    "theme": "light",
+    "width": 390,
+    "height": 844,
+    "undersizedTargets": []
+  },
+  {
+    "view": "showcase",
+    "theme": "dark",
+    "width": 1440,
+    "height": 900,
+    "undersizedTargets": []
+  },
+  {
+    "view": "showcase",
+    "theme": "dark",
+    "width": 390,
+    "height": 844,
+    "undersizedTargets": []
+  },
+  {
+    "view": "showcase",
+    "theme": "light",
+    "width": 1440,
+    "height": 900,
+    "undersizedTargets": []
+  },
+  {
+    "view": "showcase",
+    "theme": "light",
+    "width": 390,
+    "height": 844,
+    "undersizedTargets": []
+  }
+]

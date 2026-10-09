@@ -159,7 +159,8 @@ describe('handleMessage — game_update', () => {
     expect(get(games)).toEqual([])
   })
 
-  it('auto-switches away from ended game to an active game', () => {
+  it('retains the chosen lane on completion', () => {
+    games.set([{game_id:0, is_over:false},{game_id:1,is_over:false}])
     selectedGameId.set(0)
     handleMessage({
       type: 'game_update',
@@ -168,7 +169,7 @@ describe('handleMessage — game_update', () => {
         { game_id: 1, is_over: false },
       ],
     })
-    expect(get(selectedGameId)).toBe(1)
+    expect(get(selectedGameId)).toBe(0)
   })
 
   it('stays on ended game when no active game exists', () => {
@@ -195,7 +196,7 @@ describe('handleMessage — game_update', () => {
     expect(get(selectedGameId)).toBe(0)
   })
 
-  it('preserves selectedGameId when selected game is not in snapshots', () => {
+  it('reconciles an unavailable selection instead of leaving a stale highlight', () => {
     selectedGameId.set(99)
     handleMessage({
       type: 'game_update',
@@ -205,7 +206,7 @@ describe('handleMessage — game_update', () => {
       ],
     })
     // current is undefined (not found), so no auto-switch
-    expect(get(selectedGameId)).toBe(99)
+    expect(get(selectedGameId)).toBe(0)
   })
 })
 

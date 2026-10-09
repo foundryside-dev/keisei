@@ -72,6 +72,29 @@ def run_inference(
     - scalar contract: tanh [-1,1] -> [0,1]
     - multi_head contract: softmax(value_logits)[0] = P(win)
     """
+    policy, legacy_value, _ = run_inference_with_evaluation(
+        model, obs, architecture, player="black", position_ply=0,
+    )
+    return policy, legacy_value
+
+
+def run_inference_with_evaluation(
+    model: nn.Module,
+    obs: np.ndarray,
+    architecture: str,
+    *,
+    player: str,
+    position_ply: int,
+) -> tuple[np.ndarray, float, dict[str, Any]]:
+    """Infer once, retaining legacy value and a qualified pre-move outcome score.
+
+    Outcome score gives a draw half credit. It is an uncalibrated model
+    estimate from ``player``'s perspective, not a probability of winning.
+    """
+    if player not in {"black", "white"}:
+        raise ValueError("Evaluated player must be black or white")
+    if type(position_ply) is not int or position_ply < 0:
+        raise ValueError("Evaluated position ply must be a nonnegative integer")
     expected_channels = get_obs_channels(architecture)
     if obs.shape != (expected_channels, 9, 9):
         raise ValueError(
@@ -87,20 +110,34 @@ def run_inference(
 
     contract = get_model_contract(architecture)
 
+    evaluation: dict[str, Any] = {
+        "version": 1, "kind": "outcome_score", "player": player,
+        "position_ply": position_ply,
+        "source": {"architecture": architecture, "contract": contract},
+    }
     if contract == "multi_head":
         # NOTE: reshape(-1) flattens (9,9,139) in row-major order.
         # This matches the SpatialActionMapper's flat index convention
         # used by SpectatorEnv(action_mode="spatial").
         policy_logits = output.policy_logits.squeeze(0).reshape(-1)
-        win_prob = torch.softmax(output.value_logits.squeeze(0), dim=0)[0].item()
+        wdl = torch.softmax(output.value_logits.squeeze(0), dim=0)
+        if wdl.shape != (3,) or not torch.isfinite(wdl).all():
+            raise ValueError("Invalid W/D/L model output")
+        win_prob = wdl[0].item()
+        score = win_prob + 0.5 * wdl[1].item()
+        evaluation["wdl"] = dict(zip(("win", "draw", "loss"), wdl.tolist(), strict=True))
     else:
         policy_logits_t, value_tensor = output
         policy_logits = policy_logits_t.squeeze(0)
         win_prob = (value_tensor.squeeze(0).item() + 1.0) / 2.0
+        score = win_prob
 
     if not torch.isfinite(policy_logits).all() or not np.isfinite(win_prob):
         raise ValueError("Non-finite model output")
-    return policy_logits.numpy(), float(win_prob)
+    if not 0.0 <= score <= 1.0:
+        raise ValueError("Outcome score outside [0, 1]")
+    evaluation["score"] = float(score)
+    return policy_logits.numpy(), float(win_prob), evaluation
 
 
 class ModelCache:

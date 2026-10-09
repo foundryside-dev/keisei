@@ -7,6 +7,7 @@ import random
 import sqlite3
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from keisei.db._connection import _connect
@@ -54,6 +55,7 @@ CREATE TABLE IF NOT EXISTS showcase_moves (
     current_player  TEXT NOT NULL,
     in_check        INTEGER NOT NULL DEFAULT 0,
     value_estimate  REAL,
+    evaluation_json TEXT,
     top_candidates  TEXT,
     move_heatmap_json TEXT,
     move_usi        TEXT,
@@ -71,6 +73,7 @@ CREATE TABLE IF NOT EXISTS showcase_heartbeat (
 """
 
 MAX_SHOWCASE_QUEUE_DEPTH = 5
+MAX_SAVED_GAME_MOVES = 2048
 MAX_RETRIES = 3
 RETRY_BASE_DELAY = 0.1
 
@@ -237,7 +240,8 @@ def write_showcase_move(db_path: str, *, game_id: int, ply: int, action_index: i
                          current_player: str, in_check: bool, value_estimate: float,
                          top_candidates: str, move_time_ms: int,
                          move_heatmap_json: str | None = None,
-                         move_usi: str | None = None) -> None:
+                         move_usi: str | None = None,
+                         evaluation_json: str | None = None) -> None:
     """Atomic write: INSERT move + UPDATE total_ply in one transaction."""
     conn = _connect(db_path)
     try:
@@ -249,10 +253,10 @@ def write_showcase_move(db_path: str, *, game_id: int, ply: int, action_index: i
                     """INSERT OR IGNORE INTO showcase_moves
                        (game_id, ply, action_index, usi_notation, board_json, hands_json,
                         current_player, in_check, value_estimate, top_candidates,
-                        move_heatmap_json, move_usi, move_time_ms, created_at)
+                        move_heatmap_json, move_usi, move_time_ms, created_at, evaluation_json)
                        VALUES (:game_id, :ply, :action_index, :usi_notation, :board_json, :hands_json,
                                :current_player, :in_check, :value_estimate, :top_candidates,
-                               :move_heatmap_json, :move_usi, :move_time_ms, :created_at)""",
+                               :move_heatmap_json, :move_usi, :move_time_ms, :created_at, :evaluation_json)""",
                     {
                         "game_id": game_id, "ply": ply, "action_index": action_index,
                         "usi_notation": usi_notation, "board_json": board_json,
@@ -261,6 +265,7 @@ def write_showcase_move(db_path: str, *, game_id: int, ply: int, action_index: i
                         "top_candidates": top_candidates, "move_heatmap_json": move_heatmap_json,
                         "move_usi": move_usi,
                         "move_time_ms": move_time_ms, "created_at": now,
+                        "evaluation_json": evaluation_json,
                     })
                 conn.execute("UPDATE showcase_games SET total_ply = MAX(total_ply, ?) WHERE id = ?", (ply, game_id))
                 conn.commit()
@@ -290,6 +295,30 @@ def read_all_showcase_moves(db_path: str, game_id: int) -> list[dict[str, Any]]:
     try:
         rows = conn.execute("SELECT * FROM showcase_moves WHERE game_id = ? ORDER BY ply", (game_id,)).fetchall()
         return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def read_saved_showcase_game(db_path: str, game_id: int) -> dict[str, Any] | None:
+    """Read a consistent saved-game snapshot without writes or unbounded moves.
+
+    Games exceeding the 2048-move legacy/corrupt-data ceiling are rejected,
+    never truncated. URI read-only mode also prevents creating a missing DB.
+    """
+    conn = sqlite3.connect(f"{Path(db_path).resolve().as_uri()}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("BEGIN")
+        game = conn.execute("SELECT * FROM showcase_games WHERE id = ?", (game_id,)).fetchone()
+        if game is None:
+            return None
+        moves = conn.execute(
+            "SELECT * FROM showcase_moves WHERE game_id = ? ORDER BY ply LIMIT ?",
+            (game_id, MAX_SAVED_GAME_MOVES + 1),
+        ).fetchall()
+        if len(moves) > MAX_SAVED_GAME_MOVES:
+            raise ValueError(f"Saved match exceeds the {MAX_SAVED_GAME_MOVES}-move response limit")
+        return {"game": dict(game), "moves": [dict(move) for move in moves]}
     finally:
         conn.close()
 

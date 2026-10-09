@@ -105,6 +105,7 @@
     <span class="tier-badge {tierInfo.cssClass}" title={tierInfo.tooltip}>{tierInfo.icon} {tierInfo.label}</span>
   {/if}
   <div class="name">{name || '—'}</div>
+  <details class="player-details"><summary>Player details</summary>
   {#if primaryStyle}
     <div class="style-label">{primaryStyle}</div>
   {/if}
@@ -163,13 +164,18 @@
       {/each}
     </div>
   {/if}
+  </details>
 </div>
 
 <style>
+  summary { min-height:44px; padding:12px 0; cursor:pointer; font-size:12px; color:var(--text-secondary); }
+  .fact-row { gap:8px; overflow-wrap:anywhere; }
+  .player-details { width:100%; }
   .player-card {
     border: 1px solid var(--border);
     border-radius: 6px;
-    padding: 14px;
+    padding: 8px;
+    min-width: 0;
     background: var(--bg-secondary);
     flex: 1;
     display: flex;
@@ -217,16 +223,17 @@
     border-radius: 3px;
     margin-top: 6px;
   }
-  .tier-badge.role-frontier { color: #7b8fa8; background: rgba(123, 143, 168, 0.12); }
-  .tier-badge.role-recent { color: #c8962e; background: var(--badge-bg-gold); }
+  .tier-badge.role-frontier { color: var(--accent-frontier); background: rgba(123, 143, 168, 0.12); }
+  .tier-badge.role-recent { color: var(--accent-gold); background: var(--badge-bg-gold); }
   .tier-badge.role-dynamic { color: var(--accent-teal); background: var(--badge-bg-teal); }
-  .tier-badge.role-historical { color: #9b7ec8; background: rgba(155, 126, 200, 0.12); }
+  .tier-badge.role-historical { color: var(--accent-historical); background: rgba(155, 126, 200, 0.12); }
   .tier-badge.role-unknown { color: var(--text-muted); background: rgba(128, 128, 128, 0.12); }
 
   .name {
-    font-size: 16px;
+    font-size: 14px;
     color: var(--text-primary);
-    margin-top: 8px;
+    overflow-wrap:anywhere;
+    margin-top:4px;
   }
 
   .style-label {
@@ -275,8 +282,8 @@
     color: var(--text-muted);
     cursor: pointer;
     font-size: 16px;
-    min-width: 32px;
-    min-height: 32px;
+    min-width: 44px;
+    min-height: 44px;
     padding: 0;
     display: flex;
     align-items: center;
@@ -297,7 +304,6 @@
   .profile-status {
     font-size: 12px;
     color: var(--text-muted);
-    opacity: 0.6;
     margin-top: 2px;
     text-transform: uppercase;
     letter-spacing: 0.5px;

@@ -87,13 +87,13 @@ describe('showcaseDisplayedMove and scrubbing', () => {
     expect(get(showcaseDisplayedMove)).toBeNull()
   })
 
-  it('isScrubbing is false when selection points to the last move', () => {
+  it('isScrubbing remains true when paused at the latest move', () => {
     showcaseMoves.set([
       { ply: 1 },
       { ply: 2 },
     ])
     showcaseSelectedPly.set(1)
-    expect(get(isScrubbing)).toBe(false)
+    expect(get(isScrubbing)).toBe(true)
   })
 
   it('resetShowcaseSelectionOnGameChange clears the selection', () => {

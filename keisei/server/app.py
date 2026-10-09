@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -29,10 +29,12 @@ from keisei.db import (
     read_tournament_stats,
     read_training_state,
 )
+from keisei.db.gauntlet import read_gauntlet_history
 from keisei.db.showcase import (
     MAX_SHOWCASE_QUEUE_DEPTH,
     read_all_showcase_moves,
     read_latest_showcase_game,
+    read_saved_showcase_game,
     read_showcase_game,
     read_showcase_moves_since,
 )
@@ -273,6 +275,27 @@ def create_app(db_path: str, allowed_hosts: frozenset[str] | None = None) -> Fas
                     # exceptions (TimeoutError, AssertionError) that would
                     # otherwise log as "WebSocket error: " with no context.
                     logger.warning("WebSocket error: %r", exc, exc_info=exc)
+
+    @app.get("/api/league/gauntlet")
+    async def gauntlet_history(
+        before_epoch: int | None = Query(default=None, ge=0, le=2**63 - 1),
+        limit: int = Query(default=5, ge=1, le=50),
+    ) -> dict[str, Any]:
+        return await asyncio.to_thread(
+            read_gauntlet_history, db_path, before_epoch=before_epoch, limit=limit,
+        )
+
+    @app.get("/api/showcase/games/{game_id}")
+    async def saved_showcase_game(game_id: int) -> dict[str, Any]:
+        if not 0 < game_id <= 2**63 - 1:
+            raise HTTPException(status_code=422, detail="game_id must be a positive SQLite integer")
+        try:
+            saved = await asyncio.to_thread(read_saved_showcase_game, db_path, game_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=413, detail=str(exc)) from exc
+        if saved is None:
+            raise HTTPException(status_code=404, detail="Saved match not found")
+        return saved
 
     # Mount audio assets from the repo root, kept out of the bundled static
     # directory because the file is ~700 MB. <audio> uses HTTP Range, so

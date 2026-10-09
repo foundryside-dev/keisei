@@ -22,6 +22,7 @@ export default defineConfig({
       },
       '/healthz': 'http://localhost:8001',
       '/audio': 'http://localhost:8001',
+      '/api': 'http://localhost:8001',
     },
   },
 })

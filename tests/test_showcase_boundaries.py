@@ -53,7 +53,7 @@ def test_runner_preserves_decisive_engine_outcome_even_on_last_ply(tmp_path: Pat
     runner = ShowcaseRunner(db)
     env = MagicMock()
     env.is_over = False
-    env.reset.return_value = {"current_player": "black"}
+    env.reset.return_value = {"current_player": "black", "ply": 0}
     env.get_observation.return_value = np.zeros((get_obs_channels("mlp"), 9, 9), dtype=np.float32)
     env.legal_actions.return_value = [0]
     env.legal_moves_with_usi.return_value = [(0, "7g7f")]
@@ -70,11 +70,28 @@ def test_runner_preserves_decisive_engine_outcome_even_on_last_ply(tmp_path: Pat
     with (
         patch.object(runner, "_create_env", return_value=env),
         patch.object(runner, "_load_models", return_value=(None, None, "mlp", "mlp", entry, entry)),
-        patch("keisei.showcase.runner.run_inference", return_value=(np.zeros(13527), 0.5)),
+        patch(
+            "keisei.showcase.runner.run_inference_with_evaluation",
+            return_value=(
+                np.zeros(13527),
+                0.5,
+                {
+                    "version": 1,
+                    "kind": "outcome_score",
+                    "score": 0.5,
+                    "player": "black",
+                    "position_ply": 0,
+                    "source": {"architecture": "mlp", "contract": "scalar"},
+                },
+            ),
+        ) as inference,
         patch("keisei.showcase.runner.MAX_PLY", 1),
         patch.object(runner, "_get_delay", return_value=0),
     ):
         runner._run_game(match)
+    inference.assert_called_once_with(
+        None, env.get_observation.return_value, "mlp", player="black", position_ply=0,
+    )
     with _connect(db) as conn:
         status = conn.execute("SELECT status FROM showcase_games").fetchone()["status"]
     assert status == (f"{winner}_win" if winner else "draw")

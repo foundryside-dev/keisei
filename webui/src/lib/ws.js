@@ -5,7 +5,7 @@
  */
 
 import { writable, get } from 'svelte/store'
-import { games, selectedGameId } from '../stores/games.js'
+import { games } from '../stores/games.js'
 import { metrics, appendMetrics } from '../stores/metrics.js'
 import { trainingState } from '../stores/training.js'
 import {
@@ -141,9 +141,6 @@ export function handleMessage(msg) {
       headToHeadRaw.set(msg.head_to_head || [])
       tournamentStats.set(msg.tournament_stats ?? null)
       styleProfilesRaw.set(msg.style_profiles || [])
-      if (msg.games?.length > 0) {
-        selectedGameId.update(id => id ?? 0)
-      }
       // Showcase init (cold-start support)
       if (msg.showcase) {
         if (get(showcaseGame)?.id !== msg.showcase.game?.id) {
@@ -167,15 +164,6 @@ export function handleMessage(msg) {
           else updated.push(snap)
         }
         return updated
-      })
-      // Auto-switch away from ended games
-      selectedGameId.update(id => {
-        const current = snapshots.find(g => g.game_id === id)
-        if (current && current.is_over) {
-          const active = snapshots.find(g => !g.is_over)
-          if (active) return active.game_id
-        }
-        return id
       })
       break
     }

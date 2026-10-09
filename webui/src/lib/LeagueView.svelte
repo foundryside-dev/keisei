@@ -8,6 +8,7 @@
   import HistoricalLibrary from './HistoricalLibrary.svelte'
   import { focusedEntryId } from '../stores/league.js'
   import { tick } from 'svelte'
+  import { navigation, selectEntry } from '../stores/navigation.js'
 
   $: stats = $leagueStats
   $: tStats = $tournamentStats
@@ -15,8 +16,40 @@
   $: learnerName = learner?.display_name || null
 
   let entryDetailHeading
+  let leaderboardHeading
+  let originEntryId = null
+  let originControl = null
+  let focusStatus = ''
+  let leagueRoot
 
-  function closeDetail() { focusedEntryId.set(null) }
+  $: if ($navigation.view === 'league' && $focusedEntryId !== $navigation.entryId) focusedEntryId.set($navigation.entryId)
+
+  function openEntry(id, origin) {
+    if ($focusedEntryId === id) { closeDetail(); return }
+    originEntryId = id
+    originControl = origin
+    focusStatus = ''
+    selectEntry(id)
+  }
+
+  function closeDetail() { selectEntry(null) }
+
+  async function restoreOrigin() {
+    await tick()
+    if ($focusedEntryId != null) return
+    const currentRow = [...(leagueRoot?.querySelectorAll('[data-entry-id]') || [])]
+      .find(row => row.dataset.entryId === String(originEntryId))
+    if (originControl?.isConnected && originControl.dataset.entryId === String(originEntryId) && currentRow) originControl.focus()
+    else if (currentRow) currentRow.focus()
+    else {
+      focusStatus = originEntryId == null
+        ? 'Entry details closed. Focus returned to the leaderboard heading.'
+        : 'Entry details closed. The originating entry is no longer in the leaderboard. Focus returned to the leaderboard heading.'
+      leaderboardHeading?.focus()
+    }
+    originControl = null
+    originEntryId = null
+  }
   function handleMainKeydown(e) {
     if (e.key === 'Escape' && $focusedEntryId != null) {
       e.preventDefault()
@@ -25,13 +58,15 @@
   }
 
   // Focus EntryDetail heading only when focusedEntryId actually changes value
-  let prevFocusedId = null
+  let prevFocusedId = $navigation.view === 'league' ? $navigation.entryId : null
   $: {
     const currentId = $focusedEntryId
     if (currentId !== prevFocusedId) {
       prevFocusedId = currentId
       if (currentId != null) {
-        tick().then(() => entryDetailHeading?.focus())
+        tick().then(() => { if ($focusedEntryId === currentId) entryDetailHeading?.focus() })
+      } else if (currentId == null) {
+        restoreOrigin()
       }
     }
   }
@@ -40,7 +75,8 @@
 <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
 <!-- Esc-to-close-detail handler — needs to be on the focused main region so it
      only fires while the user is engaged with the league view, not globally. -->
-<main id="league-main" class="league-view" aria-labelledby="tab-league" tabindex="-1" on:keydown={handleMainKeydown}>
+<div id="league-main" role="tabpanel" bind:this={leagueRoot} class="league-view" aria-labelledby="tab-league" tabindex="-1" on:keydown={handleMainKeydown}>
+  <p class="sr-only" role="status">{focusStatus}</p>
   {#if stats}
     <div class="stats-banner" role="region" aria-label="League summary">
       <div class="stat-card highlight">
@@ -90,7 +126,7 @@
   <div class="league-grid" class:has-detail={$focusedEntryId != null}>
     <div class="left-col">
       <div class="table-wrapper">
-        <LeagueTable totalSlots={$leagueCapacity.total} roleCapacities={$leagueCapacity.roles} />
+        <LeagueTable totalSlots={$leagueCapacity.total} roleCapacities={$leagueCapacity.roles} bind:headingEl={leaderboardHeading} onEntryOpen={openEntry} />
       </div>
       <section class="historical-library-wrapper" aria-label="Historical benchmarks">
         <HistoricalLibrary />
@@ -116,7 +152,7 @@
       </div>
     </div>
   </div>
-</main>
+</div>
 
 <style>
   .league-view {
@@ -124,9 +160,8 @@
     flex-direction: column;
     gap: 12px;
     padding: 12px 16px;
-    height: 100%;
     min-height: 0;
-    overflow: hidden;
+    overflow: visible;
   }
   .league-view:focus { outline: none; }
 
@@ -214,11 +249,11 @@
   .league-grid {
     display: grid;
     grid-template-columns: 2fr 3fr;
-    grid-template-rows: 3fr 1fr;
+    grid-template-rows: auto auto;
     gap: 12px;
-    flex: 1;
     min-height: 0;
-    overflow: hidden;
+    overflow: visible;
+    align-items: start;
   }
 
   /* Left column: table + optional detail. Spans both rows so the leaderboard
@@ -241,7 +276,7 @@
 
   .historical-library-wrapper {
     flex: 0 1 auto;
-    max-height: 35%;
+    max-height: 460px;
     min-height: 100px;
     overflow: auto;
     border: 1px solid var(--border);
@@ -258,7 +293,7 @@
   .entry-detail-wrapper {
     flex: 0 1 auto;
     min-height: 120px;
-    max-height: 60%;
+    max-height: 600px;
     overflow-y: auto;
     border: 1px solid var(--border);
     border-radius: 6px;
@@ -380,8 +415,17 @@
 
   @media (max-width: 600px) {
     .league-view { padding: 10px; }
-    .stat-card, .stat-card.highlight { flex: 1 1 100%; min-width: 0; }
-    .stats-banner { gap: 8px; }
+    .stat-card, .stat-card.highlight { flex: 1 1 calc(50% - 8px); min-width: 0; padding: 8px; align-items: flex-start; gap: 2px; }
+    .stat-card.highlight { flex-basis: 100%; flex-direction: row; align-items: baseline; justify-content: space-between; flex-wrap: wrap; }
+    .stat-card.highlight .stat-value { font-size: 14px; overflow-wrap: anywhere; }
+    .stat-value { font-size: 14px; }
+    .stat-label { font-size: 11px; letter-spacing: 0; text-transform: none; }
+    .stat-card:nth-child(2) { order:1; }
+    .stat-card:nth-child(4) { order:2; }
+    .stat-card.stat-trio { flex-basis:100%; order:3; }
+    .stat-card.completed-round { order:4; flex-basis: 100%; flex-direction: row; align-items: baseline; flex-wrap: wrap; gap: 6px; }
+    .completed-round time { margin-left: auto; }
+    .stats-banner { gap: 6px; }
     .league-grid, .bottom-right-split { overflow: visible; }
   }
 </style>

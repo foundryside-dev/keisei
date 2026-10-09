@@ -10,7 +10,7 @@
   const tabs = [
     { id: 'training', label: 'Training' },
     { id: 'league', label: 'League' },
-    { id: 'showcase', label: 'Showcase' },
+    { id: 'showcase', label: 'Watch match' },
     { id: 'about', label: 'About' },
   ]
 
@@ -29,7 +29,7 @@
   }
 </script>
 
-<nav aria-label="Dashboard views"><div class="tab-bar" role="tablist">
+<nav aria-label="Dashboard views"><div class="tab-bar" role="tablist" aria-label="Views">
   {#each tabs as tab}
     <button
       role="tab"
@@ -44,6 +44,7 @@
       {tab.label}
     </button>
   {/each}
+</div><div class="preferences" role="group" aria-label="Display and audio">
   <button
     class="icon-toggle"
     on:click={toggleAudio}
@@ -64,6 +65,9 @@
 </div></nav>
 
 <style>
+  nav { display:flex; flex-wrap:wrap; gap:4px; align-items:center; min-width:0; }
+  .preferences { display:flex; gap:4px; }
+  @media(max-width:480px) { button { padding:8px 8px; font-size:12px; } }
   .tab-bar {
     display: flex;
     flex-wrap: wrap;
@@ -72,7 +76,7 @@
   }
 
   button {
-    padding: 8px 16px;
+    padding: 8px 10px;
     min-height: 44px;
     font-size: 13px;
     font-weight: 600;
@@ -100,7 +104,7 @@
   }
 
   .icon-toggle {
-    margin-left: 8px;
+    margin-left: 0;
     font-size: 14px;
     padding: 8px 12px;
     min-width: 44px;
