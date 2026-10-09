@@ -10,6 +10,12 @@ TWO_KINGS = "4k4/9/9/9/9/9/9/9/4K4"
 @pytest.mark.parametrize(
     "sfen",
     [
+        "8k/9/9/9/4P4/4P4/9/9/K8 b - 1",
+        "8k/9/9/9/4p4/4p4/9/9/K8 w - 1",
+        "P7k/9/9/9/9/9/9/9/K8 b - 1",
+        "8k/9/9/9/9/9/9/9/K7l w - 1",
+        "8k/4N4/9/9/9/9/9/9/K8 b - 1",
+        "8k/9/9/9/9/9/9/4n4/K8 w - 1",
         f"{TWO_KINGS} b 19P 1",
         f"{TWO_KINGS} b 255P 1",
         f"{TWO_KINGS} b 256P 1",
@@ -134,3 +140,19 @@ def test_katago_observation_includes_check_for_the_white_perspective():
     assert env.get_observation().shape == (46, 9, 9)
     with pytest.raises(ValueError, match="Unknown observation_mode"):
         env.get_observation(observation_mode="unsupported")
+
+
+@pytest.mark.parametrize("action_mode", ["default", "spatial"])
+@pytest.mark.parametrize("piece", ["P", "L", "N"])
+@pytest.mark.parametrize("white", [False, True])
+def test_promoted_piece_on_last_rank_has_no_second_promotion_marker(action_mode, piece, white):
+    if white:
+        sfen = f"8k/9/9/9/9/9/9/4+{piece.lower()}4/K8 w - 1"
+        usi, expected = "5h5i", f"+{piece}-5i"
+    else:
+        sfen = f"8k/4+{piece}4/9/9/9/9/9/9/K8 b - 1"
+        usi, expected = "5b5a", f"+{piece}-5a"
+    env = SpectatorEnv.from_sfen(sfen, action_mode=action_mode)
+    action = next(action for action, move in env.legal_moves_with_usi() if move == usi)
+    state = env.step(action)
+    assert state["move_history"][-1]["notation"] == expected
