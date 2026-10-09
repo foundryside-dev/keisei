@@ -51,6 +51,7 @@ from keisei.training.katago_ppo import (
 from keisei.training.match_scheduler import MatchScheduler, build_match_class_weights
 from keisei.training.model_registry import build_model
 from keisei.training.opponent_store import OpponentEntry, OpponentStore, Role
+from keisei.training.outcomes import GameOutcomeTracker
 from keisei.training.policy import masked_categorical
 from keisei.training.priority_scorer import PriorityScorer
 from keisei.training.tiered_pool import TieredPool
@@ -291,6 +292,7 @@ def split_merge_step(
     learner_side: int | np.ndarray = 0,
     value_adapter: ValueHeadAdapter | None = None,
     opponent_devices: dict[int, torch.device | None] | None = None,
+    active_mask: torch.Tensor | None = None,
 ) -> SplitMergeResult:
     """Execute one step with split learner/opponent forward passes.
 
@@ -302,6 +304,8 @@ def split_merge_step(
         opponent_devices: Pre-computed device map from _resolve_opponent_devices().
             When provided, skips the per-model next(model.parameters()).device
             probe on every step.  None values mean same device as learner.
+        active_mask: Optional full-size mask of lanes to advance. Paused lanes
+            are excluded from both learner and opponent inference.
 
     Returns only learner-side data (log_probs, values, indices). The caller
     stores ONLY learner transitions in the rollout buffer.
@@ -323,6 +327,12 @@ def split_merge_step(
     cmp_result = np.ascontiguousarray(current_players == learner_side)
     learner_mask = torch.from_numpy(cmp_result).to(device=device, dtype=torch.bool)
     opponent_mask = ~learner_mask
+    if active_mask is not None:
+        if active_mask.shape != (num_envs,):
+            raise ValueError("active_mask must have one entry per environment")
+        active_mask = active_mask.to(device=device, dtype=torch.bool)
+        learner_mask &= active_mask
+        opponent_mask &= active_mask
     learner_indices = learner_mask.nonzero(as_tuple=True)[0]
 
     actions = torch.zeros(num_envs, dtype=torch.long, device=device)
@@ -888,6 +898,7 @@ class KataGoTrainingLoop:
             self.device
         )
         current_players = np.zeros(self.num_envs, dtype=np.uint8)
+        outcome_tracker = GameOutcomeTracker(self.num_envs)
         # Epochs (including seat rotations) continue these games without an
         # environment reset. Keep each game's color until its done handler
         # assigns a color for the next game.
@@ -1188,7 +1199,20 @@ class KataGoTrainingLoop:
             _acc_inference = 0.0
             _acc_env_step = 0.0
             _acc_bookkeeping = 0.0
-            for step_i in range(steps_per_epoch):
+            # A final masked step completes outstanding opponent responses
+            # under the same behavior policy, without starting new decisions.
+            for step_i in range(steps_per_epoch + 1):
+                step_active_mask: torch.Tensor | None = None
+                step_learner_mask: torch.Tensor | None = None
+                if step_i == steps_per_epoch:
+                    if pending is None or not bool(pending.valid.any()):
+                        break
+                    step_active_mask = pending.valid.clone()
+                    learner_to_move = torch.from_numpy(
+                        np.ascontiguousarray(current_players == learner_side),
+                    ).to(self.device)
+                    if bool((step_active_mask & learner_to_move).any()):
+                        raise RuntimeError("Unresolved learner decisions must be awaiting an opponent response")
                 self.global_step += 1
 
                 if self._current_opponent is not None:
@@ -1201,6 +1225,9 @@ class KataGoTrainingLoop:
                         learner_moved = pre_players_t.eq(learner_side_t)
                     else:
                         learner_moved = pre_players_t == learner_side  # type: ignore[assignment]  # Tensor.__eq__ returns Tensor at runtime
+                    if step_active_mask is not None:
+                        learner_moved &= step_active_mask
+                    step_learner_mask = learner_moved
 
                     # Split-merge: learner vs opponent
                     _t0 = time.monotonic()
@@ -1214,6 +1241,7 @@ class KataGoTrainingLoop:
                             learner_side=learner_side,
                             value_adapter=self.value_adapter,
                             opponent_devices=self._opponent_device_map,
+                            active_mask=step_active_mask,
                         )
                     else:
                         sm_result = split_merge_step(
@@ -1223,12 +1251,18 @@ class KataGoTrainingLoop:
                             opponent_model=self._current_opponent,
                             learner_side=learner_side,
                             value_adapter=self.value_adapter,
+                            active_mask=step_active_mask,
                         )
                     _t1 = time.monotonic()
                     _acc_inference += _t1 - _t0
                     actions = sm_result.actions
                     action_list = actions.tolist()
-                    step_result = self.vecenv.step(action_list)
+                    if step_active_mask is None:
+                        step_result = self.vecenv.step(action_list)
+                    else:
+                        step_result = self.vecenv.step(
+                            action_list, active_mask=step_active_mask.cpu().tolist(),
+                        )
                     _t2 = time.monotonic()
                     _acc_env_step += _t2 - _t1
 
@@ -1555,6 +1589,11 @@ class KataGoTrainingLoop:
                         next_value_override=next_value_override,
                     )
 
+                # Keep completed-game supervision independent of the on-policy
+                # actor buffer. Unfinished histories survive rollout cutoffs;
+                # auto-reset and truncation are resolved before the next state.
+                outcome_tracker.record(obs, pre_players, mask=step_learner_mask)
+                outcome_tracker.resolve(rewards, terminated, truncated, pre_players)
                 obs = torch.from_numpy(np.asarray(step_result.observations)).to(self.device)
                 legal_masks = torch.from_numpy(np.asarray(step_result.legal_masks)).to(self.device)
                 self._maybe_write_snapshots()
@@ -1563,33 +1602,8 @@ class KataGoTrainingLoop:
 
             _t_rollout_end = time.monotonic()
 
-            # Finalize any remaining pending transitions at epoch end.
-            # These are learner moves whose games did not resolve before the epoch
-            # ended. They are stored with done=False so GAE bootstraps from next_values.
-            if pending is not None and pending.valid.any():
-                flush_count = pending.valid.sum().item()
-                remaining_mask = pending.valid.clone()
-                remaining_dones = torch.zeros(self.num_envs, device=self.device)
-                remaining_terminated = torch.zeros(self.num_envs, device=self.device)
-                remaining = pending.finalize(remaining_mask, remaining_dones, remaining_terminated)
-                if remaining is not None:
-                    remaining_value_cats = torch.full(
-                        (remaining["env_ids"].numel(),), -1,
-                        dtype=torch.long, device=self.device,
-                    )
-                    self.buffer.add(
-                        remaining["obs"], remaining["actions"],
-                        remaining["log_probs"], remaining["values"],
-                        remaining["rewards"], remaining["dones"],
-                        remaining["terminated"],
-                        remaining["legal_masks"], remaining_value_cats,
-                        remaining["score_targets"],
-                        env_ids=remaining["env_ids"],
-                    )
-                    logger.info(
-                        "Epoch %d: flushed %d pending transitions at epoch end",
-                        epoch_i, flush_count,
-                    )
+            if pending is not None and bool(pending.valid.any()):
+                raise RuntimeError("Opponent completion left unresolved learner decisions before PPO update")
 
             # Bootstrap value for GAE
             self.ppo.forward_model.eval()
@@ -1642,6 +1656,7 @@ class KataGoTrainingLoop:
                 self.buffer, next_values,
                 value_adapter=self.value_adapter,
                 heartbeat_fn=self._maybe_update_heartbeat,
+                critic_batch=outcome_tracker.pop_completed(),
             )
             self.ppo.flush_timings()
             _t_update_end = time.monotonic()

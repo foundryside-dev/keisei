@@ -60,10 +60,8 @@ def katago_config(tmp_path):
 def _with_league(config, tmp_path, snapshot_interval=10, color_randomization=False):
     """Helper to add league config to an existing AppConfig.
 
-    color_randomization defaults to False so that tests using non-alternating
-    mock envs (all players == Black) don't starve the buffer when learner_side
-    is randomly assigned White for some envs.  Tests that specifically exercise
-    color randomization should pass color_randomization=True explicitly.
+    color_randomization defaults to False for deterministic learner turns.
+    Tests that exercise randomized colors pass color_randomization=True.
     """
     league = LeagueConfig(
 
