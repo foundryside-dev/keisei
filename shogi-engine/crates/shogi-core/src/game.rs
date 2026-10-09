@@ -18,6 +18,7 @@ use crate::zobrist::ZOBRIST;
 #[derive(Debug, Clone)]
 pub struct UndoInfo {
     pub captured: Option<Piece>,
+    pub prev_result: GameResult,
     pub prev_hash: u64,
     pub prev_attack_map: AttackMap,
     pub was_in_check: bool,
@@ -82,13 +83,36 @@ impl GameState {
 
     /// Parse a playable SFEN position. Unlike structural `Position` parsing,
     /// this requires both kings, physically possible material totals, and a
-    /// turn consistent with the nonmoving king being safe.
+    /// turn consistent with the nonmoving king being safe. Unpromoted pieces
+    /// must have room to move, and each player may have only one unpromoted pawn
+    /// per file.
     pub fn from_sfen(sfen: &str, max_ply: u32) -> Result<GameState, ShogiError> {
         let position = Position::from_sfen(sfen)?;
         let mut kings = [0u8; 2];
         let mut material = [0u16; HandPieceType::COUNT];
-        for raw in position.board {
+        let mut pawn_files = [[false; 9]; 2];
+        for (idx, raw) in position.board.iter().copied().enumerate() {
             if let Some(piece) = Piece::from_u8(raw) {
+                if !piece.is_promoted() {
+                    if crate::movegen::must_promote(
+                        piece.piece_type(),
+                        (idx / 9) as u8,
+                        piece.color(),
+                    ) {
+                        return Err(ShogiError::InvalidSfen(
+                            "unpromoted piece on a rank where it cannot move".into(),
+                        ));
+                    }
+                    if piece.piece_type() == PieceType::Pawn {
+                        let file = &mut pawn_files[piece.color() as usize][idx % 9];
+                        if *file {
+                            return Err(ShogiError::InvalidSfen(
+                                "multiple unpromoted pawns of one player on the same file".into(),
+                            ));
+                        }
+                        *file = true;
+                    }
+                }
                 if let Some(hpt) = HandPieceType::from_piece_type(piece.piece_type()) {
                     material[hpt.index()] += 1;
                 } else {
@@ -174,6 +198,7 @@ impl GameState {
 
         // Save state for undo.
         let prev_hash = self.position.hash;
+        let prev_result = self.result;
         let prev_attack_map = self.attack_map;
         let was_in_check = self.is_in_check();
 
@@ -294,6 +319,7 @@ impl GameState {
 
         UndoInfo {
             captured,
+            prev_result,
             prev_hash,
             prev_attack_map,
             was_in_check,
@@ -376,8 +402,9 @@ impl GameState {
         self.hash_history.pop();
         self.check_history.pop();
 
-        // 8. Decrement ply.
+        // 8. Restore lifecycle state, including any adjudication after make_move.
         self.ply -= 1;
+        self.result = undo.prev_result;
     }
 
     // -----------------------------------------------------------------------
@@ -581,6 +608,110 @@ mod tests {
     use crate::attack::compute_attack_map;
     use crate::movelist::MoveList;
     use crate::piece::Piece;
+
+    #[test]
+    fn undo_after_adjudication_restores_live_game() {
+        let mut game = GameState::with_max_ply(1);
+        let before = game.position.clone();
+        let mv = game.legal_moves()[0];
+        let undo = game.make_move(mv);
+        game.check_termination();
+        assert_eq!(game.result, GameResult::MaxMoves);
+        game.unmake_move(mv, undo);
+        assert!(game.position == before);
+        assert_eq!(game.ply, 0);
+        game.check_termination();
+        assert_eq!(
+            game.result,
+            GameResult::InProgress,
+            "undo leaves a terminal result on the restored initial position"
+        );
+    }
+
+    #[test]
+    fn undo_checkmate_does_not_poison_another_branch() {
+        let mut game = GameState::from_sfen("k8/9/1K7/9/9/9/9/9/9 b G 1", 500).unwrap();
+        let mate = Move::Drop {
+            to: Square::from_row_col(1, 0).unwrap(),
+            piece_type: HandPieceType::Gold,
+        };
+        assert!(game.legal_moves().contains(&mate));
+        let undo = game.make_move(mate);
+        game.check_termination();
+        assert_eq!(
+            game.result,
+            GameResult::Checkmate {
+                winner: Color::Black
+            }
+        );
+        game.unmake_move(mate, undo);
+        let quiet = Move::Drop {
+            to: Square::from_row_col(4, 4).unwrap(),
+            piece_type: HandPieceType::Gold,
+        };
+        assert!(game.legal_moves().contains(&quiet));
+        game.make_move(quiet);
+        assert!(!game.is_in_check());
+        assert!(!game.legal_moves().is_empty());
+        game.check_termination();
+        assert_eq!(
+            game.result,
+            GameResult::InProgress,
+            "a quiet sibling branch inherits the previous branch's checkmate"
+        );
+    }
+
+    #[test]
+    fn test_playable_sfen_pawn_files_respect_color_and_promotion() {
+        for color in [Color::Black, Color::White] {
+            for other_color in [color, color.opponent()] {
+                for promoted in [false, true] {
+                    let mut pos = Position::from_sfen("8k/9/9/9/9/9/9/9/8K b - 1").unwrap();
+                    pos.set_piece(
+                        Square::from_row_col(4, 4).unwrap(),
+                        Piece::new(PieceType::Pawn, color, false),
+                    );
+                    pos.set_piece(
+                        Square::from_row_col(5, 4).unwrap(),
+                        Piece::new(PieceType::Pawn, other_color, promoted),
+                    );
+                    let sfen = pos.to_sfen();
+                    assert!(Position::from_sfen(&sfen).is_ok());
+                    assert_eq!(
+                        GameState::from_sfen(&sfen, 500).is_ok(),
+                        color != other_color || promoted,
+                        "{sfen}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_playable_sfen_dead_ranks_for_both_colors() {
+        for color in [Color::Black, Color::White] {
+            for pt in [PieceType::Pawn, PieceType::Lance, PieceType::Knight] {
+                for row in 0..9 {
+                    for promoted in [false, true] {
+                        let mut pos = Position::from_sfen("8k/9/9/9/9/9/9/9/8K b - 1").unwrap();
+                        pos.set_piece(
+                            Square::from_row_col(row, 4).unwrap(),
+                            Piece::new(pt, color, promoted),
+                        );
+                        let ranks_remaining = if color == Color::Black { row } else { 8 - row };
+                        let minimum_ranks = if pt == PieceType::Knight { 2 } else { 1 };
+                        let sfen = pos.to_sfen();
+                        assert!(Position::from_sfen(&sfen).is_ok());
+                        assert_eq!(
+                            GameState::from_sfen(&sfen, 500).is_ok(),
+                            promoted || ranks_remaining >= minimum_ranks,
+                            "{sfen}"
+                        );
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn test_from_sfen_rejects_missing_or_duplicate_kings() {

@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   silently dropping work.
 
 ### Fixed
+- **Engine undo and loaded positions** — undo restores the prior game result so
+  adjudicated branches cannot contaminate later moves. Playable SFEN loading
+  rejects double pawns and unpromoted pieces stranded on forbidden ranks.
+- **Spectator promotion notation** — already-promoted pawns, lances, and knights
+  no longer receive a second promotion marker when moving onto their last ranks.
 - **League dashboard records** — lifetime totals and W/L/D include all results;
   learner summaries use its latest ten tournament epochs. Sorting preserves
   ranking and champion identity on a shared composite Elo scale. Historical

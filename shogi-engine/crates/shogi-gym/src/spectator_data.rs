@@ -178,7 +178,7 @@ pub fn move_notation(mv: Move, position: &Position, legal_moves: &[Move]) -> Str
             let dest = square_notation(to);
 
             // Promotion suffix
-            let suffix = if promote || is_forced_promotion(pt, to, color) {
+            let suffix = if promote || (!promoted && is_forced_promotion(pt, to, color)) {
                 "+"
             } else if could_promote(piece, from, to) {
                 "="
