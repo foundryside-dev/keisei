@@ -1,0 +1,922 @@
+[
+  {
+    "theme": "dark",
+    "width": 1440,
+    "height": 900,
+    "contrast": [
+      {
+        "name": "new-match",
+        "foreground": [
+          77,
+          184,
+          168,
+          1
+        ],
+        "background": [
+          14,
+          12,
+          10,
+          1
+        ],
+        "ratio": 8.12,
+        "minimum": 4.5
+      },
+      {
+        "name": "selected-tab",
+        "foreground": [
+          77,
+          184,
+          168,
+          1
+        ],
+        "background": [
+          13,
+          46,
+          40,
+          1
+        ],
+        "ratio": 6.07,
+        "minimum": 4.5
+      },
+      {
+        "name": "selected-speed",
+        "foreground": [
+          77,
+          184,
+          168,
+          1
+        ],
+        "background": [
+          13,
+          46,
+          40,
+          1
+        ],
+        "ratio": 6.07,
+        "minimum": 4.5
+      },
+      {
+        "name": "board-coordinates",
+        "foreground": [
+          168,
+          152,
+          128,
+          1
+        ],
+        "background": [
+          26,
+          23,
+          16,
+          1
+        ],
+        "ratio": 6.36,
+        "minimum": 4.5
+      },
+      {
+        "name": "viewer-state",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          14,
+          12,
+          10,
+          1
+        ],
+        "ratio": 14.92,
+        "minimum": 4.5
+      },
+      {
+        "name": "player-role",
+        "foreground": [
+          168,
+          152,
+          128,
+          1
+        ],
+        "background": [
+          22,
+          19,
+          16,
+          1
+        ],
+        "ratio": 6.58,
+        "minimum": 4.5
+      },
+      {
+        "name": "analysis-label",
+        "foreground": [
+          168,
+          152,
+          128,
+          1
+        ],
+        "background": [
+          14,
+          12,
+          10,
+          1
+        ],
+        "ratio": 6.94,
+        "minimum": 4.5
+      },
+      {
+        "name": "graph-label",
+        "foreground": [
+          168,
+          152,
+          128,
+          1
+        ],
+        "background": [
+          14,
+          12,
+          10,
+          1
+        ],
+        "ratio": 6.94,
+        "minimum": 4.5
+      },
+      {
+        "name": "board-grid",
+        "foreground": [
+          115,
+          85,
+          56,
+          1
+        ],
+        "background": [
+          212,
+          167,
+          106,
+          1
+        ],
+        "ratio": 3.09,
+        "minimum": 3
+      },
+      {
+        "name": "focus",
+        "foreground": [
+          126,
+          184,
+          212,
+          1
+        ],
+        "background": [
+          14,
+          12,
+          10,
+          1
+        ],
+        "ratio": 9.01,
+        "minimum": 3
+      },
+      {
+        "name": "chart-series",
+        "foreground": [
+          77,
+          184,
+          168,
+          1
+        ],
+        "background": [
+          14,
+          12,
+          10,
+          1
+        ],
+        "ratio": 8.12,
+        "minimum": 3
+      },
+      {
+        "name": "chart-axis",
+        "foreground": [
+          168,
+          152,
+          128,
+          1
+        ],
+        "background": [
+          14,
+          12,
+          10,
+          1
+        ],
+        "ratio": 6.94,
+        "minimum": 4.5
+      }
+    ]
+  },
+  {
+    "theme": "dark",
+    "width": 1440,
+    "primaryAction": {
+      "foreground": "rgb(14, 12, 10)",
+      "background": "rgb(77, 184, 168)",
+      "enabled": true
+    }
+  },
+  {
+    "theme": "dark",
+    "width": 1440,
+    "text200": {
+      "overflow": false,
+      "squares": 81,
+      "controls": 436,
+      "motion": "1e-05s"
+    }
+  },
+  {
+    "theme": "dark",
+    "width": 390,
+    "height": 844,
+    "contrast": [
+      {
+        "name": "new-match",
+        "foreground": [
+          77,
+          184,
+          168,
+          1
+        ],
+        "background": [
+          14,
+          12,
+          10,
+          1
+        ],
+        "ratio": 8.12,
+        "minimum": 4.5
+      },
+      {
+        "name": "selected-tab",
+        "foreground": [
+          77,
+          184,
+          168,
+          1
+        ],
+        "background": [
+          13,
+          46,
+          40,
+          1
+        ],
+        "ratio": 6.07,
+        "minimum": 4.5
+      },
+      {
+        "name": "selected-speed",
+        "foreground": [
+          77,
+          184,
+          168,
+          1
+        ],
+        "background": [
+          13,
+          46,
+          40,
+          1
+        ],
+        "ratio": 6.07,
+        "minimum": 4.5
+      },
+      {
+        "name": "board-coordinates",
+        "foreground": [
+          168,
+          152,
+          128,
+          1
+        ],
+        "background": [
+          26,
+          23,
+          16,
+          1
+        ],
+        "ratio": 6.36,
+        "minimum": 4.5
+      },
+      {
+        "name": "viewer-state",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          14,
+          12,
+          10,
+          1
+        ],
+        "ratio": 14.92,
+        "minimum": 4.5
+      },
+      {
+        "name": "player-role",
+        "foreground": [
+          168,
+          152,
+          128,
+          1
+        ],
+        "background": [
+          22,
+          19,
+          16,
+          1
+        ],
+        "ratio": 6.58,
+        "minimum": 4.5
+      },
+      {
+        "name": "analysis-label",
+        "foreground": [
+          168,
+          152,
+          128,
+          1
+        ],
+        "background": [
+          14,
+          12,
+          10,
+          1
+        ],
+        "ratio": 6.94,
+        "minimum": 4.5
+      },
+      {
+        "name": "graph-label",
+        "foreground": [
+          168,
+          152,
+          128,
+          1
+        ],
+        "background": [
+          14,
+          12,
+          10,
+          1
+        ],
+        "ratio": 6.94,
+        "minimum": 4.5
+      },
+      {
+        "name": "board-grid",
+        "foreground": [
+          115,
+          85,
+          56,
+          1
+        ],
+        "background": [
+          212,
+          167,
+          106,
+          1
+        ],
+        "ratio": 3.09,
+        "minimum": 3
+      },
+      {
+        "name": "focus",
+        "foreground": [
+          126,
+          184,
+          212,
+          1
+        ],
+        "background": [
+          14,
+          12,
+          10,
+          1
+        ],
+        "ratio": 9.01,
+        "minimum": 3
+      },
+      {
+        "name": "chart-series",
+        "foreground": [
+          77,
+          184,
+          168,
+          1
+        ],
+        "background": [
+          14,
+          12,
+          10,
+          1
+        ],
+        "ratio": 8.12,
+        "minimum": 3
+      },
+      {
+        "name": "chart-axis",
+        "foreground": [
+          168,
+          152,
+          128,
+          1
+        ],
+        "background": [
+          14,
+          12,
+          10,
+          1
+        ],
+        "ratio": 6.94,
+        "minimum": 4.5
+      }
+    ]
+  },
+  {
+    "theme": "dark",
+    "width": 390,
+    "primaryAction": {
+      "foreground": "rgb(14, 12, 10)",
+      "background": "rgb(77, 184, 168)",
+      "enabled": true
+    }
+  },
+  {
+    "theme": "dark",
+    "width": 390,
+    "text200": {
+      "overflow": false,
+      "squares": 81,
+      "controls": 374,
+      "motion": "1e-05s"
+    }
+  },
+  {
+    "theme": "light",
+    "width": 1440,
+    "height": 900,
+    "contrast": [
+      {
+        "name": "new-match",
+        "foreground": [
+          26,
+          110,
+          96,
+          1
+        ],
+        "background": [
+          247,
+          243,
+          236,
+          1
+        ],
+        "ratio": 5.51,
+        "minimum": 4.5
+      },
+      {
+        "name": "selected-tab",
+        "foreground": [
+          26,
+          110,
+          96,
+          1
+        ],
+        "background": [
+          200,
+          232,
+          224,
+          1
+        ],
+        "ratio": 4.67,
+        "minimum": 4.5
+      },
+      {
+        "name": "selected-speed",
+        "foreground": [
+          26,
+          110,
+          96,
+          1
+        ],
+        "background": [
+          200,
+          232,
+          224,
+          1
+        ],
+        "ratio": 4.67,
+        "minimum": 4.5
+      },
+      {
+        "name": "board-coordinates",
+        "foreground": [
+          74,
+          62,
+          48,
+          1
+        ],
+        "background": [
+          232,
+          223,
+          207,
+          1
+        ],
+        "ratio": 7.85,
+        "minimum": 4.5
+      },
+      {
+        "name": "viewer-state",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          247,
+          243,
+          236,
+          1
+        ],
+        "ratio": 16.4,
+        "minimum": 4.5
+      },
+      {
+        "name": "player-role",
+        "foreground": [
+          74,
+          62,
+          48,
+          1
+        ],
+        "background": [
+          237,
+          231,
+          218,
+          1
+        ],
+        "ratio": 8.43,
+        "minimum": 4.5
+      },
+      {
+        "name": "analysis-label",
+        "foreground": [
+          74,
+          62,
+          48,
+          1
+        ],
+        "background": [
+          247,
+          243,
+          236,
+          1
+        ],
+        "ratio": 9.39,
+        "minimum": 4.5
+      },
+      {
+        "name": "graph-label",
+        "foreground": [
+          74,
+          62,
+          48,
+          1
+        ],
+        "background": [
+          247,
+          243,
+          236,
+          1
+        ],
+        "ratio": 9.39,
+        "minimum": 4.5
+      },
+      {
+        "name": "board-grid",
+        "foreground": [
+          115,
+          85,
+          56,
+          1
+        ],
+        "background": [
+          212,
+          167,
+          106,
+          1
+        ],
+        "ratio": 3.09,
+        "minimum": 3
+      },
+      {
+        "name": "focus",
+        "foreground": [
+          26,
+          92,
+          128,
+          1
+        ],
+        "background": [
+          247,
+          243,
+          236,
+          1
+        ],
+        "ratio": 6.58,
+        "minimum": 3
+      },
+      {
+        "name": "chart-series",
+        "foreground": [
+          26,
+          110,
+          96,
+          1
+        ],
+        "background": [
+          247,
+          243,
+          236,
+          1
+        ],
+        "ratio": 5.51,
+        "minimum": 3
+      },
+      {
+        "name": "chart-axis",
+        "foreground": [
+          74,
+          62,
+          48,
+          1
+        ],
+        "background": [
+          247,
+          243,
+          236,
+          1
+        ],
+        "ratio": 9.39,
+        "minimum": 4.5
+      }
+    ]
+  },
+  {
+    "theme": "light",
+    "width": 1440,
+    "primaryAction": {
+      "foreground": "rgb(255, 255, 255)",
+      "background": "rgb(26, 110, 96)",
+      "enabled": true
+    }
+  },
+  {
+    "theme": "light",
+    "width": 1440,
+    "text200": {
+      "overflow": false,
+      "squares": 81,
+      "controls": 436,
+      "motion": "1e-05s"
+    }
+  },
+  {
+    "theme": "light",
+    "width": 390,
+    "height": 844,
+    "contrast": [
+      {
+        "name": "new-match",
+        "foreground": [
+          26,
+          110,
+          96,
+          1
+        ],
+        "background": [
+          247,
+          243,
+          236,
+          1
+        ],
+        "ratio": 5.51,
+        "minimum": 4.5
+      },
+      {
+        "name": "selected-tab",
+        "foreground": [
+          26,
+          110,
+          96,
+          1
+        ],
+        "background": [
+          200,
+          232,
+          224,
+          1
+        ],
+        "ratio": 4.67,
+        "minimum": 4.5
+      },
+      {
+        "name": "selected-speed",
+        "foreground": [
+          26,
+          110,
+          96,
+          1
+        ],
+        "background": [
+          200,
+          232,
+          224,
+          1
+        ],
+        "ratio": 4.67,
+        "minimum": 4.5
+      },
+      {
+        "name": "board-coordinates",
+        "foreground": [
+          74,
+          62,
+          48,
+          1
+        ],
+        "background": [
+          232,
+          223,
+          207,
+          1
+        ],
+        "ratio": 7.85,
+        "minimum": 4.5
+      },
+      {
+        "name": "viewer-state",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          247,
+          243,
+          236,
+          1
+        ],
+        "ratio": 16.4,
+        "minimum": 4.5
+      },
+      {
+        "name": "player-role",
+        "foreground": [
+          74,
+          62,
+          48,
+          1
+        ],
+        "background": [
+          237,
+          231,
+          218,
+          1
+        ],
+        "ratio": 8.43,
+        "minimum": 4.5
+      },
+      {
+        "name": "analysis-label",
+        "foreground": [
+          74,
+          62,
+          48,
+          1
+        ],
+        "background": [
+          247,
+          243,
+          236,
+          1
+        ],
+        "ratio": 9.39,
+        "minimum": 4.5
+      },
+      {
+        "name": "graph-label",
+        "foreground": [
+          74,
+          62,
+          48,
+          1
+        ],
+        "background": [
+          247,
+          243,
+          236,
+          1
+        ],
+        "ratio": 9.39,
+        "minimum": 4.5
+      },
+      {
+        "name": "board-grid",
+        "foreground": [
+          115,
+          85,
+          56,
+          1
+        ],
+        "background": [
+          212,
+          167,
+          106,
+          1
+        ],
+        "ratio": 3.09,
+        "minimum": 3
+      },
+      {
+        "name": "focus",
+        "foreground": [
+          26,
+          92,
+          128,
+          1
+        ],
+        "background": [
+          247,
+          243,
+          236,
+          1
+        ],
+        "ratio": 6.58,
+        "minimum": 3
+      },
+      {
+        "name": "chart-series",
+        "foreground": [
+          26,
+          110,
+          96,
+          1
+        ],
+        "background": [
+          247,
+          243,
+          236,
+          1
+        ],
+        "ratio": 5.51,
+        "minimum": 3
+      },
+      {
+        "name": "chart-axis",
+        "foreground": [
+          74,
+          62,
+          48,
+          1
+        ],
+        "background": [
+          247,
+          243,
+          236,
+          1
+        ],
+        "ratio": 9.39,
+        "minimum": 4.5
+      }
+    ]
+  },
+  {
+    "theme": "light",
+    "width": 390,
+    "primaryAction": {
+      "foreground": "rgb(255, 255, 255)",
+      "background": "rgb(26, 110, 96)",
+      "enabled": true
+    }
+  },
+  {
+    "theme": "light",
+    "width": 390,
+    "text200": {
+      "overflow": false,
+      "squares": 81,
+      "controls": 374,
+      "motion": "1e-05s"
+    }
+  }
+]

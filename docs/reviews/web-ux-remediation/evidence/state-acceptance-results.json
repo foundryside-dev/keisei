@@ -1,0 +1,266 @@
+{
+  "scope": "Real Chromium CLI state acceptance against actual create_app, SQLite, WebSocket, static build and API routes",
+  "primary_fixture": "/tmp/keisei-ux08-u3_gudru/fixture.sqlite",
+  "auxiliary_fixture": "/tmp/keisei-ux08-lebk0x9o/fixture.sqlite",
+  "primary_port": 8765,
+  "auxiliary_port": 8766,
+  "auxiliary_stopped": true,
+  "ux_state_browser_closed": true,
+  "primary_preserved": {
+    "lanes": 32,
+    "active_entries": 20,
+    "live_match_id": 4,
+    "completed_previous_match_id": 3,
+    "newest_evaluation_epoch": 52,
+    "lane0_replaced_with_consistent_initial_position": true
+  },
+  "limitations": [
+    "Saved API loading held browser delivery; network failure intentionally aborted browser request; response payloads were actual backend data.",
+    "Disconnect console errors came from intentionally stopping auxiliary server; aborted API request produced expected fetch error.",
+    "Command pending and actual success acknowledgement observed in browser; command rejection covered by frontend tests, not separately induced here."
+  ],
+  "results": {
+    "state-01-pin.log": {
+      "moveSpace": {
+        "url": "http://127.0.0.1:8765/?view=showcase&match=3&ply=1",
+        "historyEntriesAdded": 0,
+        "replacementCalls": 1,
+        "pressed": "true"
+      },
+      "tailPinned": {
+        "url": "http://127.0.0.1:8765/?view=showcase&match=3&ply=13",
+        "label": "Paused at ply 13"
+      }
+    },
+    "state-02-archive.log": {
+      "retained": {
+        "url": "http://127.0.0.1:8765/?view=showcase&match=3&ply=13",
+        "label": "Replay \u00b7 ply 13",
+        "result": "Black Ivory Crane \u2014 Long Snapshot Name for Investigation Frontier 1583 Player details Architecture: resnet\u00b7 b8c128White Ivory Crane \u2014 Long Snapshot Name for Investigation Recent 1566 Player details Architecture: resnet\u00b7 b8c128 draw Ply 13/ latest 13 \u00b7 white to move Black head-to-head: 7 wins, 3 losses, 2 draws"
+      },
+      "latest": {
+        "id": 4,
+        "status": "in_progress"
+      },
+      "followed": {
+        "url": "http://127.0.0.1:8765/?view=showcase",
+        "label": "Live",
+        "ply": "Black Ivory Crane \u2014 Long Snapshot Name for Investigation Frontier 1583 Player details Architecture: resnet\u00b7 b8c128White Ivory Crane \u2014 Long Snapshot Name for Investigation Recent 1566 Player details Architecture: resnet\u00b7 b8c128  Ply 12 \u00b7 black to move Black head-to-head: 7 wins, 3 losses, 2 draws"
+      }
+    },
+    "state-03-history-load.log": {
+      "epochs": 51,
+      "uniqueEpochs": 51,
+      "rows": 255,
+      "oldest": "Epoch 1",
+      "beforeLiveScroll": {
+        "scrollTop": 5460,
+        "scrollHeight": 5918
+      }
+    },
+    "state-04-history-live.log": {
+      "epochs": 52,
+      "uniqueEpochs": 52,
+      "rows": 260,
+      "newest": "Epoch 52",
+      "newestRows": 5,
+      "oldest": "Epoch 1",
+      "scroll": {
+        "scrollTop": 5572,
+        "scrollHeight": 6030,
+        "clientHeight": 458,
+        "bottomDistance": 0
+      },
+      "entryOpened": {
+        "url": "http://127.0.0.1:8765/?view=league&entry=1",
+        "focus": "\ud83d\udee1 Ivory Crane \u2014 Long Snapshot Name for Investigation 1583 Entry #1 \u00b7 epoch 13 \u00b7 active"
+      }
+    },
+    "state-05-focus.log": {
+      "detailBefore": "\u23f8 Ivory Crane \u2014 Long Snapshot Name for Investigation 1583 Entry #1 \u00b7 epoch 13 \u00b7 retired",
+      "afterClose": {
+        "url": "http://127.0.0.1:8765/?view=league",
+        "focus": "Elo Leaderboard 19 / 20",
+        "status": "Entry details closed. The originating entry is no longer in the leaderboard. Focus returned to the leaderboard heading."
+      }
+    },
+    "state-06-lane-completion.log": {
+      "info": "Game 1\nwhite to move\nPly\n1\nResult\n\u2713 draw",
+      "selected": [
+        "Game 1, draw",
+        "Game 1, draw"
+      ],
+      "moves": "MOVE LOG\nNOTATION:\nW\n#\t\u2617 Black\t\u2616 White\n1\tP*1b\t"
+    },
+    "state-07-lane-replacement.log": {
+      "info": "Game 1\nblack to move\nPly\n0\nResult\nIn progress",
+      "announcement": "New game in lane 1",
+      "moves": "MOVE LOG\nNOTATION:\nW\n#\t\u2617 Black\t\u2616 White\nNo moves yet",
+      "board": "9\u00d79 shogi board, black to move. Black has 2 pieces, White has 2 pieces on the board"
+    },
+    "state-08-aux-initial.log": {
+      "url": "http://127.0.0.1:8766/?view=training",
+      "selected": "Game 1\nwhite to move\nPly\n1\nResult\nIn progress"
+    },
+    "state-08-disconnect.log": {
+      "url": "http://127.0.0.1:8766/?view=training",
+      "connection": [
+        "Disconnected from server \u2014 reconnecting\u2026"
+      ],
+      "retainedGame": "Game 1\nwhite to move\nPly\n1\nResult\nIn progress"
+    },
+    "state-09-reconnect.log": {
+      "connection": "connected",
+      "info": "Game 2\nblack to move\nPly\n2\nResult\nIn progress",
+      "status": "Lane 1 is unavailable. Selected lane 2."
+    },
+    "state-10-empty-offline.log": {
+      "empty": {
+        "url": "http://127.0.0.1:8766/?view=training",
+        "text": "Waiting for game data\u2026 Connect a training session to see live games.",
+        "status": "No training lanes available.",
+        "thumbnails": 0
+      },
+      "offline": {
+        "text": "Match engine is offline. Saved matches remain available. Start the sidecar to enable live matches.",
+        "boardPresent": true
+      }
+    },
+    "state-11-loading-error.log": {
+      "loading": {
+        "text": "Loading saved match\u2026",
+        "viewerCount": 0
+      },
+      "failed": {
+        "text": "Failed to fetchRetry saved matchWatch latest match",
+        "viewerCount": 0
+      },
+      "retry": {
+        "url": "http://127.0.0.1:8766/?view=showcase&match=2",
+        "label": "Replay \u00b7 ply 12",
+        "estimate": "Estimate unavailable No qualified evaluation was stored for this position."
+      },
+      "missing": "Match 999999 is unavailable. Choose another match or watch the latest match.Retry saved matchWatch latest match",
+      "recoveryUrl": "http://127.0.0.1:8766/?view=showcase",
+      "conditions": "Real server payloads; browser delivery held for loading and browser request aborted for retry; actual HTTP404 for missing match."
+    },
+    "state-12-offline-contrast.log": [
+      {
+        "selector": "offline-banner svelte-181t8qc",
+        "text": "Match engine is offline. Saved matches remain available. Start the sidecar to enable live matches.",
+        "foreground": [
+          255,
+          107,
+          90
+        ],
+        "background": [
+          39,
+          20,
+          18
+        ],
+        "ratio": 6.27,
+        "theme": "dark"
+      }
+    ],
+    "state-13-command.log": {
+      "states": [
+        "Waiting for the server to confirm\u2026",
+        "Match added to the queue."
+      ],
+      "feedback": "Match added to the queue."
+    },
+    "state-14-offline-light-contrast.log": [
+      {
+        "selector": "offline-banner svelte-181t8qc",
+        "text": "Match engine is offline. Saved matches remain available. Start the sidecar to enable live matches.",
+        "foreground": [
+          158,
+          31,
+          31
+        ],
+        "background": [
+          234,
+          211,
+          205
+        ],
+        "ratio": 5.51,
+        "theme": "light"
+      }
+    ],
+    "state-15-reconnect-light-contrast.log": [
+      {
+        "selector": "reconnect-banner svelte-mnfmy8",
+        "text": "Disconnected from server \u2014 reconnecting\u2026",
+        "foreground": [
+          158,
+          31,
+          31
+        ],
+        "background": [
+          237,
+          231,
+          218
+        ],
+        "ratio": 6.38,
+        "theme": "light"
+      },
+      {
+        "selector": "offline-banner svelte-181t8qc",
+        "text": "Match engine is offline. Saved matches remain available. Start the sidecar to enable live matches.",
+        "foreground": [
+          158,
+          31,
+          31
+        ],
+        "background": [
+          234,
+          211,
+          205
+        ],
+        "ratio": 5.51,
+        "theme": "light"
+      }
+    ],
+    "state-16-reconnect-dark-contrast.log": [
+      {
+        "selector": "reconnect-banner svelte-mnfmy8",
+        "text": "Disconnected from server \u2014 reconnecting\u2026",
+        "foreground": [
+          255,
+          107,
+          90
+        ],
+        "background": [
+          22,
+          19,
+          16
+        ],
+        "ratio": 6.61,
+        "theme": "dark"
+      },
+      {
+        "selector": "offline-banner svelte-181t8qc",
+        "text": "Match engine is offline. Saved matches remain available. Start the sidecar to enable live matches.",
+        "foreground": [
+          255,
+          107,
+          90
+        ],
+        "background": [
+          39,
+          20,
+          18
+        ],
+        "ratio": 6.27,
+        "theme": "dark"
+      }
+    ],
+    "state-browser-bundle.log": {
+      "url": "http://127.0.0.1:8766/?view=showcase",
+      "scripts": [
+        "http://127.0.0.1:8766/assets/index-Du54lW70.js"
+      ],
+      "theme": "dark"
+    }
+  }
+}

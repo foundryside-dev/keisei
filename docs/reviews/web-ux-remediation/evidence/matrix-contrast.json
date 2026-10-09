@@ -1,0 +1,1508 @@
+[
+  {
+    "theme": "dark",
+    "pairs": [
+      {
+        "name": "matrix-cell-0",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          29.535000000000004,
+          41.605000000000004,
+          36.824,
+          1
+        ],
+        "ratio": 11.41,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-1",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          29.535000000000004,
+          41.605000000000004,
+          36.824,
+          1
+        ],
+        "ratio": 11.41,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-2",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          73.51,
+          34.555,
+          32.32,
+          1
+        ],
+        "ratio": 10.39,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-3",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          29.535000000000004,
+          41.605000000000004,
+          36.824,
+          1
+        ],
+        "ratio": 11.41,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-4",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          73.51,
+          34.555,
+          32.32,
+          1
+        ],
+        "ratio": 10.39,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-5",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          73.51,
+          34.555,
+          32.32,
+          1
+        ],
+        "ratio": 10.39,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-6",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          29.535000000000004,
+          41.605000000000004,
+          36.824,
+          1
+        ],
+        "ratio": 11.41,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-7",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          73.51,
+          34.555,
+          32.32,
+          1
+        ],
+        "ratio": 10.39,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-8",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          29.535000000000004,
+          41.605000000000004,
+          36.824,
+          1
+        ],
+        "ratio": 11.41,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-9",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          73.51,
+          34.555,
+          32.32,
+          1
+        ],
+        "ratio": 10.39,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-10",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          29.535000000000004,
+          41.605000000000004,
+          36.824,
+          1
+        ],
+        "ratio": 11.41,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-11",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          73.51,
+          34.555,
+          32.32,
+          1
+        ],
+        "ratio": 10.39,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-12",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          29.535000000000004,
+          41.605000000000004,
+          36.824,
+          1
+        ],
+        "ratio": 11.41,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-13",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          73.51,
+          34.555,
+          32.32,
+          1
+        ],
+        "ratio": 10.39,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-14",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          29.535000000000004,
+          41.605000000000004,
+          36.824,
+          1
+        ],
+        "ratio": 11.41,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-15",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          73.51,
+          34.555,
+          32.32,
+          1
+        ],
+        "ratio": 10.39,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-16",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          29.535000000000004,
+          41.605000000000004,
+          36.824,
+          1
+        ],
+        "ratio": 11.41,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-17",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          73.51,
+          34.555,
+          32.32,
+          1
+        ],
+        "ratio": 10.39,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-18",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          29.535000000000004,
+          41.605000000000004,
+          36.824,
+          1
+        ],
+        "ratio": 11.41,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-19",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          73.51,
+          34.555,
+          32.32,
+          1
+        ],
+        "ratio": 10.39,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-20",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          29.535000000000004,
+          41.605000000000004,
+          36.824,
+          1
+        ],
+        "ratio": 11.41,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-21",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          73.51,
+          34.555,
+          32.32,
+          1
+        ],
+        "ratio": 10.39,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-22",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          29.535000000000004,
+          41.605000000000004,
+          36.824,
+          1
+        ],
+        "ratio": 11.41,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-23",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          73.51,
+          34.555,
+          32.32,
+          1
+        ],
+        "ratio": 10.39,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-24",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          29.535000000000004,
+          41.605000000000004,
+          36.824,
+          1
+        ],
+        "ratio": 11.41,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-25",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          73.51,
+          34.555,
+          32.32,
+          1
+        ],
+        "ratio": 10.39,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-26",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          29.535000000000004,
+          41.605000000000004,
+          36.824,
+          1
+        ],
+        "ratio": 11.41,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-27",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          73.51,
+          34.555,
+          32.32,
+          1
+        ],
+        "ratio": 10.39,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-28",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          29.535000000000004,
+          41.605000000000004,
+          36.824,
+          1
+        ],
+        "ratio": 11.41,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-29",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          73.51,
+          34.555,
+          32.32,
+          1
+        ],
+        "ratio": 10.39,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-30",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          29.535000000000004,
+          41.605000000000004,
+          36.824,
+          1
+        ],
+        "ratio": 11.41,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-31",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          73.51,
+          34.555,
+          32.32,
+          1
+        ],
+        "ratio": 10.39,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-32",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          29.535000000000004,
+          41.605000000000004,
+          36.824,
+          1
+        ],
+        "ratio": 11.41,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-33",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          73.51,
+          34.555,
+          32.32,
+          1
+        ],
+        "ratio": 10.39,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-34",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          29.535000000000004,
+          41.605000000000004,
+          36.824,
+          1
+        ],
+        "ratio": 11.41,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-35",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          73.51,
+          34.555,
+          32.32,
+          1
+        ],
+        "ratio": 10.39,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-36",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          29.535000000000004,
+          41.605000000000004,
+          36.824,
+          1
+        ],
+        "ratio": 11.41,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-37",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          73.51,
+          34.555,
+          32.32,
+          1
+        ],
+        "ratio": 10.39,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-38",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          29.535000000000004,
+          41.605000000000004,
+          36.824,
+          1
+        ],
+        "ratio": 11.41,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-39",
+        "foreground": [
+          232,
+          224,
+          212,
+          1
+        ],
+        "background": [
+          73.51,
+          34.555,
+          32.32,
+          1
+        ],
+        "ratio": 10.39,
+        "minimum": 4.5
+      },
+      {
+        "name": "board-grid",
+        "foreground": [
+          115,
+          85,
+          56,
+          1
+        ],
+        "background": [
+          212,
+          167,
+          106,
+          1
+        ],
+        "ratio": 3.09,
+        "minimum": 3
+      },
+      {
+        "name": "focus",
+        "foreground": [
+          126,
+          184,
+          212,
+          1
+        ],
+        "background": [
+          14,
+          12,
+          10,
+          1
+        ],
+        "ratio": 9.01,
+        "minimum": 3
+      },
+      {
+        "name": "chart-series",
+        "foreground": [
+          77,
+          184,
+          168,
+          1
+        ],
+        "background": [
+          14,
+          12,
+          10,
+          1
+        ],
+        "ratio": 8.12,
+        "minimum": 3
+      },
+      {
+        "name": "chart-axis",
+        "foreground": [
+          168,
+          152,
+          128,
+          1
+        ],
+        "background": [
+          14,
+          12,
+          10,
+          1
+        ],
+        "ratio": 6.94,
+        "minimum": 4.5
+      }
+    ]
+  },
+  {
+    "theme": "light",
+    "pairs": [
+      {
+        "name": "matrix-cell-0",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          215.08,
+          224.561,
+          211.14999999999998,
+          1
+        ],
+        "ratio": 13.44,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-1",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          215.08,
+          224.561,
+          211.14999999999998,
+          1
+        ],
+        "ratio": 13.44,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-2",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          233.685,
+          192.495,
+          182.81,
+          1
+        ],
+        "ratio": 11.02,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-3",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          215.08,
+          224.561,
+          211.14999999999998,
+          1
+        ],
+        "ratio": 13.44,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-4",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          233.685,
+          192.495,
+          182.81,
+          1
+        ],
+        "ratio": 11.02,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-5",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          233.685,
+          192.495,
+          182.81,
+          1
+        ],
+        "ratio": 11.02,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-6",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          215.08,
+          224.561,
+          211.14999999999998,
+          1
+        ],
+        "ratio": 13.44,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-7",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          233.685,
+          192.495,
+          182.81,
+          1
+        ],
+        "ratio": 11.02,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-8",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          215.08,
+          224.561,
+          211.14999999999998,
+          1
+        ],
+        "ratio": 13.44,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-9",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          233.685,
+          192.495,
+          182.81,
+          1
+        ],
+        "ratio": 11.02,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-10",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          215.08,
+          224.561,
+          211.14999999999998,
+          1
+        ],
+        "ratio": 13.44,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-11",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          233.685,
+          192.495,
+          182.81,
+          1
+        ],
+        "ratio": 11.02,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-12",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          215.08,
+          224.561,
+          211.14999999999998,
+          1
+        ],
+        "ratio": 13.44,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-13",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          233.685,
+          192.495,
+          182.81,
+          1
+        ],
+        "ratio": 11.02,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-14",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          215.08,
+          224.561,
+          211.14999999999998,
+          1
+        ],
+        "ratio": 13.44,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-15",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          233.685,
+          192.495,
+          182.81,
+          1
+        ],
+        "ratio": 11.02,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-16",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          215.08,
+          224.561,
+          211.14999999999998,
+          1
+        ],
+        "ratio": 13.44,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-17",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          233.685,
+          192.495,
+          182.81,
+          1
+        ],
+        "ratio": 11.02,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-18",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          215.08,
+          224.561,
+          211.14999999999998,
+          1
+        ],
+        "ratio": 13.44,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-19",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          233.685,
+          192.495,
+          182.81,
+          1
+        ],
+        "ratio": 11.02,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-20",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          215.08,
+          224.561,
+          211.14999999999998,
+          1
+        ],
+        "ratio": 13.44,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-21",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          233.685,
+          192.495,
+          182.81,
+          1
+        ],
+        "ratio": 11.02,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-22",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          215.08,
+          224.561,
+          211.14999999999998,
+          1
+        ],
+        "ratio": 13.44,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-23",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          233.685,
+          192.495,
+          182.81,
+          1
+        ],
+        "ratio": 11.02,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-24",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          215.08,
+          224.561,
+          211.14999999999998,
+          1
+        ],
+        "ratio": 13.44,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-25",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          233.685,
+          192.495,
+          182.81,
+          1
+        ],
+        "ratio": 11.02,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-26",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          215.08,
+          224.561,
+          211.14999999999998,
+          1
+        ],
+        "ratio": 13.44,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-27",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          233.685,
+          192.495,
+          182.81,
+          1
+        ],
+        "ratio": 11.02,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-28",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          215.08,
+          224.561,
+          211.14999999999998,
+          1
+        ],
+        "ratio": 13.44,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-29",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          233.685,
+          192.495,
+          182.81,
+          1
+        ],
+        "ratio": 11.02,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-30",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          215.08,
+          224.561,
+          211.14999999999998,
+          1
+        ],
+        "ratio": 13.44,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-31",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          233.685,
+          192.495,
+          182.81,
+          1
+        ],
+        "ratio": 11.02,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-32",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          215.08,
+          224.561,
+          211.14999999999998,
+          1
+        ],
+        "ratio": 13.44,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-33",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          233.685,
+          192.495,
+          182.81,
+          1
+        ],
+        "ratio": 11.02,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-34",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          215.08,
+          224.561,
+          211.14999999999998,
+          1
+        ],
+        "ratio": 13.44,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-35",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          233.685,
+          192.495,
+          182.81,
+          1
+        ],
+        "ratio": 11.02,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-36",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          215.08,
+          224.561,
+          211.14999999999998,
+          1
+        ],
+        "ratio": 13.44,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-37",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          233.685,
+          192.495,
+          182.81,
+          1
+        ],
+        "ratio": 11.02,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-38",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          215.08,
+          224.561,
+          211.14999999999998,
+          1
+        ],
+        "ratio": 13.44,
+        "minimum": 4.5
+      },
+      {
+        "name": "matrix-cell-39",
+        "foreground": [
+          26,
+          21,
+          14,
+          1
+        ],
+        "background": [
+          233.685,
+          192.495,
+          182.81,
+          1
+        ],
+        "ratio": 11.02,
+        "minimum": 4.5
+      },
+      {
+        "name": "board-grid",
+        "foreground": [
+          115,
+          85,
+          56,
+          1
+        ],
+        "background": [
+          212,
+          167,
+          106,
+          1
+        ],
+        "ratio": 3.09,
+        "minimum": 3
+      },
+      {
+        "name": "focus",
+        "foreground": [
+          26,
+          92,
+          128,
+          1
+        ],
+        "background": [
+          247,
+          243,
+          236,
+          1
+        ],
+        "ratio": 6.58,
+        "minimum": 3
+      },
+      {
+        "name": "chart-series",
+        "foreground": [
+          26,
+          110,
+          96,
+          1
+        ],
+        "background": [
+          247,
+          243,
+          236,
+          1
+        ],
+        "ratio": 5.51,
+        "minimum": 3
+      },
+      {
+        "name": "chart-axis",
+        "foreground": [
+          74,
+          62,
+          48,
+          1
+        ],
+        "background": [
+          247,
+          243,
+          236,
+          1
+        ],
+        "ratio": 9.39,
+        "minimum": 4.5
+      }
+    ]
+  }
+]
