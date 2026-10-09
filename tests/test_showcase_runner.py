@@ -1,6 +1,7 @@
 """Tests for the showcase sidecar runner."""
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -127,6 +128,13 @@ class TestShowcaseRunner:
         # Moves were written — mock plays 3 moves before checkmate
         moves = read_showcase_moves_since(db, 1, since_ply=0)
         assert len(moves) == 3
+        for index, move in enumerate(moves):
+            evaluation = json.loads(move["evaluation_json"])
+            assert evaluation["position_ply"] == index
+            assert evaluation["player"] == ("black" if index % 2 == 0 else "white")
+            assert evaluation["player"] != move["current_player"]
+            assert evaluation["score"] == pytest.approx(0.65)
+            assert move["value_estimate"] == pytest.approx(0.65)
 
     def test_heartbeat_written(self, db: str) -> None:
         runner = ShowcaseRunner(db_path=db)

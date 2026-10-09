@@ -54,7 +54,7 @@ from keisei.db.training_state import (
     write_training_state,
 )
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 # DDL execution order is preserved from the pre-split ``init_db`` so the
 # resulting schema is byte-equivalent.

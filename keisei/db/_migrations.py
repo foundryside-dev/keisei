@@ -137,6 +137,11 @@ def _migrate_v7_to_v8(conn: sqlite3.Connection) -> None:
     _migrate_add_column(conn, "showcase_moves", "move_usi", "TEXT")
 
 
+def _migrate_v8_to_v9(conn: sqlite3.Connection) -> None:
+    """v8 -> v9: Qualified model evaluation; legacy moves remain unavailable."""
+    _migrate_add_column(conn, "showcase_moves", "evaluation_json", "TEXT")
+
+
 # Migration registry: maps target version to the function that migrates
 # from (target - 1) → target.  Each function receives an open connection
 # and must be idempotent (safe to re-run on an already-migrated DB).
@@ -148,6 +153,7 @@ _MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
     6: _migrate_v5_to_v6,
     7: _migrate_v6_to_v7,
     8: _migrate_v7_to_v8,
+    9: _migrate_v8_to_v9,
 }
 
 

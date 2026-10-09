@@ -35,7 +35,7 @@ from keisei.showcase.heatmap import build_heatmap
 from keisei.showcase.inference import (
     ModelCache,
     enforce_cpu_only,
-    run_inference,
+    run_inference_with_evaluation,
 )
 from keisei.showcase.ownership import acquire_showcase_ownership
 from keisei.training.model_registry import get_obs_channels
@@ -139,7 +139,9 @@ class ShowcaseRunner:
                 observation_mode = "katago" if get_obs_channels(arch) == 50 else "default"
                 obs = env.get_observation(observation_mode)
                 start_ms = time.monotonic()
-                policy_logits, win_prob = run_inference(model, obs, arch)
+                policy_logits, win_prob, evaluation = run_inference_with_evaluation(
+                    model, obs, arch, player=state["current_player"], position_ply=state["ply"],
+                )
                 inference_ms = int((time.monotonic() - start_ms) * 1000)
 
                 legal = env.legal_actions()
@@ -206,6 +208,7 @@ class ShowcaseRunner:
                     top_candidates=json.dumps(top_candidates), move_time_ms=inference_ms,
                     move_heatmap_json=json.dumps(heatmap),
                     move_usi=chosen_usi_real,
+                    evaluation_json=json.dumps(evaluation, allow_nan=False),
                 )
 
                 # Re-read speed from DB periodically (not every ply — W10)
