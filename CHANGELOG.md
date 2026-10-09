@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Spectator navigation and accessibility** — share league entries and saved
+  match positions with reloadable root-query links; inspect a textual board
+  position, use scoped replay shortcuts, and opt into move announcements.
+- **League investigation** — filter head-to-head records by player and load
+  complete older evaluation epochs beyond the live history window.
 - **WebUI "About" tab** — progressive-disclosure explainer of the system at five
   levels (Big Idea → Learning Loop → Inside the Demo → Algorithmic →
   Research View) with sticky level selector, right-rail TOC, SVG architecture
@@ -23,6 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   silently dropping work.
 
 ### Fixed
+- **Spectator layout and replay** — prioritize the selected Training board,
+  expose all lanes, fit Watch match boards to their containers, and keep paused
+  positions pinned even at the latest move. Native controls retain Space behavior.
+- **Match evaluation meaning** — store pre-move player/position metadata and
+  display draw-aware Black outcome estimates. Legacy or invalid estimates are
+  unavailable instead of fabricated neutral probabilities.
 - **Engine undo and loaded positions** — undo restores the prior game result so
   adjudicated branches cannot contaminate later moves. Playable SFEN loading
   rejects double pawns and unpromoted pieces stranded on forbidden ranks.

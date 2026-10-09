@@ -53,56 +53,28 @@
 </script>
 
 <header class="status-bar">
-  <div class="left">
+  <div class="identity">
     <img src="/favicon.svg" alt="" class="app-icon" aria-hidden="true" />
-    <h1>
-      {#if displayName && displayName !== 'Player'}
-        {displayName}
-      {:else}
-        Keisei
-      {/if}
-    </h1>
-    {#if alive || epoch > 0}
-      <div class="stats">
-        {#if !alive && indicator.dot === 'yellow'}
-          <span class="phase-badge stale" aria-live="polite">&#9680; STALE — no heartbeat</span>
-        {:else if !alive}
-          <span class="phase-badge stopped" aria-live="polite">&#9632; {indicator.text.replace('Training ', '').toUpperCase()}</span>
-        {:else if phase === 'update'}
-          <span class="phase-badge update">&#9650; PPO UPDATE</span>
-        {:else if phase === 'rollout'}
-          <span class="phase-badge rollout">&#9654; ROLLOUT</span>
-        {:else}
-          <span class="phase-badge alive">&#9679; ALIVE</span>
-        {/if}
-        <span class="sep">|</span>
-        <span class="stat">Epoch {epoch.toLocaleString()}{#if totalEpochs} / {totalEpochs.toLocaleString()}{/if}</span>
-        <span class="sep">|</span>
-        <span class="stat">Step {step.toLocaleString()}</span>
-        <span class="sep">|</span>
-        <span class="stat">Games {($trainingState?.episodes || 0).toLocaleString()}</span>
-        {#if wallTime}
-          <span class="sep hide-mobile">|</span>
-          <span class="stat hide-mobile" title="Wall clock: real time since training started">Wall {wallTime}</span>
-        {/if}
-        {#if trainTime}
-          <span class="sep hide-mobile">|</span>
-          <span class="stat hide-mobile" title="Train clock: active training time (freezes when stopped)">Train {trainTime}</span>
-        {/if}
-        {#if stats.cpu_percent != null}
-          <span class="sep hide-narrow">|</span>
-          <span class="stat hide-narrow">CPU {stats.cpu_percent}%</span>
-        {/if}
-        {#each gpus as gpu, i}
-          <span class="sep hide-narrow">|</span>
-          <span class="stat hide-narrow">GPU{i} {gpu.util_percent}% ({gpu.mem_used_mb}MB)</span>
-        {/each}
-      </div>
-    {/if}
+    <h1>{displayName !== 'Player' ? displayName : 'Keisei'}</h1>
+    <span class="phase-badge" class:stale={!alive}>{indicator.text}</span>
+    <span class="epoch">Epoch {epoch.toLocaleString()}{#if totalEpochs} / {totalEpochs.toLocaleString()}{/if}</span>
+    <span class="connection">{$connectionState}</span>
+    <details class="run-details">
+      <summary>Run details</summary>
+      <dl>
+        <dt>Architecture</dt><dd>{modelArch || 'Unavailable'}</dd>
+        <dt>Phase</dt><dd>{phase || status}</dd>
+        <dt>Step</dt><dd>{step.toLocaleString()}</dd>
+        <dt>Games</dt><dd>{($trainingState?.episodes || 0).toLocaleString()}</dd>
+        <dt>Wall clock</dt><dd>{wallTime || 'Unavailable'}</dd>
+        <dt>Training clock</dt><dd>{trainTime || 'Unavailable'}</dd>
+        <dt>CPU</dt><dd>{stats.cpu_percent != null ? `${stats.cpu_percent}%` : 'Unavailable'}</dd>
+        {#each gpus as gpu,i}<dt>GPU {i}</dt><dd>{gpu.util_percent}% · {gpu.mem_used_mb} MB</dd>{/each}
+      </dl>
+      <p>{configTooltip}</p>
+    </details>
   </div>
-  <div class="right">
-    <TabBar />
-  </div>
+  <TabBar />
 </header>
 {#if $connectionState === 'connecting'}
   <div class="connecting-banner" role="status">
@@ -115,122 +87,20 @@
 {/if}
 
 <style>
-  header.status-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px 16px;
-    background: var(--bg-secondary);
-    border-bottom: 1px solid var(--border);
-  }
-
-  .left {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-  }
-
-  .app-icon {
-    height: 24px;
-    width: auto;
-    flex-shrink: 0;
-  }
-
-  h1 {
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--text-primary);
-    font-family: Georgia, 'Times New Roman', serif;
-  }
-
-  .stats {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 13px;
-    color: var(--text-muted);
-    font-family: monospace;
-  }
-
-  .stat {
-    color: var(--text-secondary);
-  }
-
-  .sep {
-    color: var(--border);
-  }
-
-  .phase-badge {
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    padding: 1px 6px;
-    border-radius: 3px;
-  }
-
-  .phase-badge.update {
-    color: var(--danger);
-    background: var(--badge-bg-danger);
-  }
-
-  .phase-badge.rollout {
-    color: var(--accent-teal);
-    background: var(--badge-bg-teal);
-  }
-
-  .phase-badge.stale {
-    color: var(--warning);
-    background: var(--badge-bg-gold);
-  }
-
-  .phase-badge.alive {
-    color: var(--accent-teal);
-    background: var(--badge-bg-teal);
-  }
-
-  .phase-badge.stopped {
-    color: var(--danger);
-    background: var(--badge-bg-danger);
-  }
-
-  .right {
-    font-size: 14px;
-  }
-
-  .connecting-banner {
-    background: rgba(77, 184, 168, 0.1);
-    border-bottom: 1px solid var(--accent-teal);
-    color: var(--accent-teal);
-    font-size: 13px;
-    font-weight: 600;
-    text-align: center;
-    padding: 6px 16px;
-  }
-
-  .reconnect-banner {
-    background: rgba(224, 80, 80, 0.15);
-    border-bottom: 1px solid var(--danger);
-    color: var(--danger);
-    font-size: 13px;
-    font-weight: 600;
-    text-align: center;
-    padding: 6px 16px;
-  }
-
-  .stats {
-    flex-wrap: wrap;
-  }
-
-  @media (max-width: 768px) {
-    .hide-mobile { display: none; }
-  }
-
-  @media (max-width: 480px) {
-    .hide-narrow { display: none; }
-    header.status-bar {
-      flex-direction: column;
-      gap: 8px;
-      align-items: flex-start;
-    }
-  }
+  .status-bar { display:flex; flex-wrap:wrap; justify-content:space-between; gap:4px 16px; align-items:center; padding:8px 12px; background:var(--bg-secondary); border-bottom:1px solid var(--border); }
+  .identity { display:flex; gap:8px; align-items:center; flex-wrap:wrap; min-width:0; }
+  .app-icon { width:24px; height:24px; }
+  h1 { font:600 16px Georgia,serif; overflow-wrap:anywhere; max-width:32ch; }
+  .phase-badge,.epoch,.connection { font-size:12px; color:var(--accent-teal); }
+  .stale { color:var(--accent-gold); }
+  .connection { color:var(--text-secondary); }
+  summary { min-height:44px; padding:12px 8px; cursor:pointer; font-size:12px; }
+  .run-details[open] { flex-basis:100%; }
+  dl { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 12px; font-size:13px; padding:8px; }
+  dt { color:var(--text-secondary); }
+  dd,p { overflow-wrap:anywhere; }
+  p { font-size:12px; padding:8px; white-space:pre-line; }
+  .connecting-banner,.reconnect-banner { padding:6px 12px; font-size:13px; text-align:center; color:var(--accent-teal); background:var(--bg-secondary); border-bottom:1px solid currentColor; }
+  .reconnect-banner { color:var(--danger); }
+  @media(max-width:600px) { .status-bar { padding:4px 8px; } .identity { gap:4px 8px; } h1 { max-width:22ch; font-size:14px; } }
 </style>

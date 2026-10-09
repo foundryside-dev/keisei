@@ -131,14 +131,17 @@
 <div class="entry-detail">
   <p class="sr-only" aria-live="polite">{entry ? `Viewing ${entry.display_name || entry.architecture}` : ''}</p>
   {#if !entry}
-    <p class="empty">Select an entry to view details</p>
+    <h3 class="detail-heading" tabindex="-1" bind:this={headingEl}>Entry #{entryId} unavailable</h3>
+    <p class="empty">This entry is not in the current league data. It may have been removed or belong to another run. Close these details to return to the leaderboard.</p>
   {:else}
     <h3 class="detail-heading" tabindex="-1" bind:this={headingEl}>
       <span class="role-icon" aria-hidden="true">{getRoleInfo(entry.role, entry.status).icon}</span>
       {entry.display_name || entry.architecture}
       <span class="heading-elo">{Math.round(entry.elo_rating)}</span>
+      <span class="entry-identity">Entry #{entry.id} · epoch {entry.created_epoch ?? 'unknown'} · {entry.status}</span>
     </h3>
 
+    {#if entry.status === 'retired'}<p class="retired-status">Retired entry. Historical results remain available; this entry is no longer in the active leaderboard.</p>{/if}
     <div class="detail-sections">
       {#if sparkData.xData.length > 0}
         <div class="detail-section spark-section">
@@ -300,4 +303,6 @@
   }
   .empty { color: var(--text-muted); font-size: 14px; text-align: center; padding: 24px; }
   .empty-small { color: var(--text-muted); font-size: 13px; padding: 10px 0; }
+  .entry-identity { display: block; flex-basis: 100%; font-size: 12px; font-weight: 400; color: var(--text-muted); }
+  .retired-status { font-size: 13px; color: var(--text-muted); margin: 8px 0; }
 </style>

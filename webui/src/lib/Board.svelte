@@ -74,6 +74,9 @@
 
 <style>
   .board-container {
+    width: var(--board-size, min(636px, 100%));
+    max-width: 100%;
+    container-type: inline-size;
     display: flex;
     flex-direction: column;
     gap: 2px;
@@ -96,13 +99,15 @@
   .board-with-rows {
     display: flex;
     gap: 4px;
+    width: 100%;
   }
 
   .board {
-    --sq: min(68px, (100vw - 60px) / 9);
+    width: calc(100% - 24px);
+    aspect-ratio: 1;
     display: grid;
-    grid-template-columns: repeat(9, var(--sq));
-    grid-template-rows: repeat(9, var(--sq));
+    grid-template-columns: repeat(9, minmax(0, 1fr));
+    grid-template-rows: repeat(9, minmax(0, 1fr));
     border: 2px solid var(--border-board);
     background: var(--bg-board);
   }
@@ -112,7 +117,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: min(36px, calc(var(--sq) * 0.5));
+    font-size: clamp(14px, 5cqw, 36px);
     position: relative;
     transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
   }

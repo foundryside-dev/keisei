@@ -65,6 +65,9 @@
 {/if}
 
 <style>
+  .queue-item { flex-wrap:wrap; min-width:0; }
+  .q-pairing { overflow-wrap:anywhere; min-width:0; }
+  button { min-height:44px; min-width:44px; }
   .up-next {
     padding: 8px 16px 12px;
     font-size: 12px;
@@ -132,7 +135,7 @@
   .cancel-btn {
     font-size: 12px;
     padding: 6px 12px;
-    min-height: 36px;
+    min-height: 44px;
     border: 1px solid var(--border);
     border-radius: 3px;
     background: transparent;
@@ -152,7 +155,7 @@
   .confirm-btn {
     font-size: 12px;
     padding: 6px 12px;
-    min-height: 36px;
+    min-height: 44px;
     border-radius: 3px;
     cursor: pointer;
     font-weight: 600;

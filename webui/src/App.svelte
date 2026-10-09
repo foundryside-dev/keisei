@@ -1,14 +1,15 @@
 <script>
   import { onMount } from 'svelte'
   import { connect, disconnect } from './lib/ws.js'
-  import { games, selectedGame, selectedOpponent } from './stores/games.js'
-  import { activeTab } from './stores/navigation.js'
+  import { games, selectedGame, selectedOpponent, laneAnnouncement } from './stores/games.js'
+  import { activeTab, navigation } from './stores/navigation.js'
   import { trainingState } from './stores/training.js'
   import { learnerEntry, learnerRecentRecord } from './stores/league.js'
   import { latestMetrics } from './stores/metrics.js'
   import StatusIndicator from './lib/StatusIndicator.svelte'
   import GameThumbnail from './lib/GameThumbnail.svelte'
   import Board from './lib/Board.svelte'
+  import BoardPosition from './lib/BoardPosition.svelte'
   import PieceTray from './lib/PieceTray.svelte'
   import MoveLog from './lib/MoveLog.svelte'
   import EvalBar from './lib/EvalBar.svelte'
@@ -27,7 +28,13 @@
   })
 
   let audioEl
-  let thumbPanelHeight = 0
+  let announceMoves = false
+  let previousLanePly = null
+  let moveAnnouncement = ''
+  $: if (game && `${game.game_id}:${game.ply}` !== previousLanePly) {
+    previousLanePly = `${game.game_id}:${game.ply}`
+    moveAnnouncement = announceMoves ? `Lane ${game.game_id + 1}, ply ${game.ply}. ${game.current_player} to move.` : ''
+  }
   // The audio element survives tab switches because it lives at App scope.
   // On reload with persisted "on", play() rejects with NotAllowedError until
   // the user provides a gesture this load. Keep the store unchanged in that
@@ -158,30 +165,19 @@
   <a href={`#${$activeTab}-main`} class="skip-nav">Skip to content</a>
   <audio bind:this={audioEl} src="/audio/lofi.opus" loop preload="none"></audio>
   <StatusIndicator />
+  {#if $navigation.error}<p class="navigation-error" role="alert">{$navigation.error}</p>{/if}
 
   {#if $activeTab === 'training'}
-    <div id="training-main" class="main-content" tabindex="-1" aria-labelledby="tab-training">
-      <aside
-        class="thumbnail-panel"
-        aria-label="Game list"
-        bind:clientHeight={thumbPanelHeight}
-        style="width: {Math.min(Math.max(thumbPanelHeight - 94, 280), 720)}px"
-      >
-        <h2 class="section-label">Games ({Math.min($games.length, 16)}{#if $games.length > 16} / {$games.length}{/if})</h2>
-        <div class="thumb-grid">
-          {#each $games.slice(0, 16) as g (g.game_id)}
-            <GameThumbnail game={g} />
-          {/each}
-        </div>
-      </aside>
-
+    <div id="training-main" class="main-content" role="tabpanel" tabindex="-1" aria-labelledby="tab-training">
+      <div class="sr-only" role="status">{$laneAnnouncement}</div>
+      <div class="sr-only" role="status">{moveAnnouncement}</div>
       <div class="player-panel">
         <PlayerCard role="learner" name={learnerName} elo={learnerElo} detail={learnerDetail} stats={learnerStats} facts={learnerFacts} />
         <div class="vs-separator">VS</div>
         <PlayerCard role="opponent" name={opponentName} elo={opponentElo} detail={opponentDetail} stats={opponentStats} facts={opponentFacts} tierRole={opp?.role} />
       </div>
 
-      <main id="game-panel" class="game-panel" aria-label="Game viewer">
+      <section id="game-panel" class="game-panel" aria-label="Game viewer">
         {#if game}
           <div class="game-view">
             <div class="board-area">
@@ -192,6 +188,8 @@
                 currentPlayer={game.current_player || 'black'}
               />
               <PieceTray color="black" hand={hands.black || {}} />
+              <BoardPosition {board} {hands} currentPlayer={game.current_player || 'black'} />
+              <label class="announce-toggle"><input type="checkbox" bind:checked={announceMoves} /> Announce following moves</label>
             </div>
 
             <div class="eval-area">
@@ -235,12 +233,21 @@
             <p class="no-game-hint">Connect a training session to see live games.</p>
           </div>
         {/if}
-      </main>
+      </section>
+      <aside class="thumbnail-panel" aria-label="Game list">
+        <div class="desktop-games"><h2>Games ({$games.length})</h2><div class="thumb-grid">{#each $games as g (g.game_id)}<GameThumbnail game={g} />{/each}</div></div>
+        <details class="game-selector compact-games">
+          <summary>Choose game ({$games.length}) · {game ? `Lane ${game.game_id + 1}` : 'No lane'}</summary>
+          <div class="thumb-grid">
+            {#each $games as g (g.game_id)}<GameThumbnail game={g} />{/each}
+          </div>
+        </details>
+      </aside>
+      <details class="metrics-panel">
+        <summary>Training metrics</summary>
+        <MetricsGrid />
+      </details>
     </div>
-
-    <section class="metrics-panel" aria-label="Training metrics">
-      <MetricsGrid />
-    </section>
   {:else if $activeTab === 'league'}
     <LeagueView />
   {:else if $activeTab === 'showcase'}
@@ -251,206 +258,50 @@
 </div>
 
 <style>
-  .skip-nav {
-    position: absolute;
-    left: -9999px;
-    top: 0;
-    z-index: 100;
-    padding: 8px 16px;
-    background: var(--accent-ink);
-    color: #fff;
-    font-size: 14px;
-    font-weight: 600;
-    text-decoration: none;
-    border-radius: 0 0 4px 0;
-  }
-
-  .skip-nav:focus { left: 0; }
-
-  .app {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto 1fr auto;
-    height: 100dvh;
-    overflow: hidden;
-    background: var(--bg-primary);
-  }
-  .app > :global(*) { min-width: 0; }
-
-  .main-content {
-    display: flex;
-    gap: 0;
-    align-items: stretch;
-    overflow: hidden;
-    min-height: 0;
-    min-width: 0;
-    border-bottom: 1px solid var(--border);
-  }
-  .main-content:focus { outline: none; }
-
-  .thumbnail-panel {
-    flex: 0 0 auto;
-    min-width: 280px;
-    max-width: 100%;
-    border-right: 1px solid var(--border);
-    padding: 8px;
-    overflow: hidden;
-  }
-
-  .section-label {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    margin-bottom: 8px;
-  }
-
-  .thumb-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 6px;
-  }
-
-  .player-panel {
-    flex: 0 0 auto;
-    width: 315px;
-    padding: 8px;
-    display: flex;
-    flex-direction: column;
-    justify-content: stretch;
-    gap: 4px;
-    border-right: 1px solid var(--border);
-  }
-
-  .vs-separator {
-    text-align: center;
-    color: var(--text-muted);
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 2px;
-  }
-
-  .game-panel {
-    flex: 1 1 auto;
-    padding: 8px;
-    overflow: hidden;
-    min-height: 0;
-    min-width: 0;
-  }
-
-  .game-view {
-    display: flex;
-    align-items: stretch;
-    gap: 16px;
-    height: 100%;
-  }
-
-  .board-area {
-    display: flex;
-    flex-direction: column;
-    flex-shrink: 0;
-    justify-content: center;
-  }
-
-  .eval-area {
-    display: flex;
-    flex-shrink: 0;
-  }
-
-  .info-area {
-    flex: 1 1 auto;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    min-width: 36ch;
-    min-height: 0;
-    overflow: hidden;
-  }
-
-  .game-info {
-    background: var(--bg-primary);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 10px;
-  }
-
-  .info-row {
-    display: flex;
-    justify-content: space-between;
-    padding: 3px 0;
-    font-size: 13px;
-  }
-
-  .info-row .label { color: var(--text-secondary); }
-  .info-row .value { color: var(--text-primary); }
-
-  .result.in-progress { color: var(--accent-gold); }
-  .result.terminal { color: var(--accent-teal); }
-
-  .no-game {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    min-height: 300px;
-    color: var(--text-muted);
-    gap: 8px;
-  }
-
-  .no-game-hint { font-size: 13px; color: var(--text-muted); }
-
-  .legend-area {
-    flex: 0 0 auto;
-    width: 320px;
-    min-height: 0;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    overflow: hidden;
-  }
-
-  .metrics-panel { padding: 12px 16px; }
-
-  @media (max-width: 1800px) {
-    .main-content { flex-direction: column; overflow-y: auto; }
-    .main-content > * { flex-shrink: 0; }
-    .game-panel { overflow: visible; }
-    .game-view { height: auto; flex-wrap: wrap; }
-    .player-panel { width: 100%; flex-direction: row; }
-    .legend-area { max-width: 100%; }
-  }
-
-  @media (max-width: 768px) {
-
-    .thumbnail-panel {
-      width: 100%;
-      border-right: none;
-      border-bottom: 1px solid var(--border);
-      max-height: 160px;
-    }
-
-    .thumb-grid {
-      grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
-    }
-
-    .player-panel {
-      width: 100%;
-      flex-direction: row;
-      border-right: none;
-      border-bottom: 1px solid var(--border);
-      justify-content: center;
-      flex-wrap: wrap;
-    }
-
-    .vs-separator { writing-mode: horizontal-tb; }
-
-    .game-view { flex-direction: column; }
-    .board-area { align-self: center; }
-    .info-area { min-width: unset; }
-  }
-
-  @media (max-width: 480px) {
-    .game-panel { padding: 8px; }
-    .metrics-panel { padding: 8px; }
+  .skip-nav { position:absolute; left:-9999px; top:0; z-index:100; padding:12px; background:var(--accent-ink); color:var(--action-text); }
+  .skip-nav:focus { left:0; }
+  .app { min-height:100dvh; background:var(--bg-primary); }
+  .main-content { display:grid; grid-template-columns:200px minmax(0,1fr); gap:12px; padding:12px; align-items:start; min-width:0; }
+  .main-content > * { min-width:0; }
+  .player-panel { grid-column:2; display:flex; gap:8px; align-items:start; }
+  .vs-separator { padding:14px 0; color:var(--text-muted); font-size:12px; }
+  .game-panel { grid-column:2; }
+  .game-view { display:grid; grid-template-columns:minmax(0,1fr) 26px minmax(200px,0.6fr); gap:12px; align-items:start; }
+  .board-area { min-width:0; width: min(100%, calc(100dvh - 300px), 636px); --board-size:100%; }
+  .info-area { min-width:0; display:flex; flex-direction:column; gap:8px; max-height:650px; }
+  .game-info { padding:10px; border:1px solid var(--border); border-radius:6px; font-size:13px; }
+  .info-row { display:flex; justify-content:space-between; gap:8px; padding:4px 0; }
+  .label { color:var(--text-secondary); }
+  .result.terminal { color:var(--accent-teal); }
+  .legend-area { grid-column:1/-1; }
+  .thumbnail-panel { grid-column:1; grid-row:1/3; }
+  .game-selector { border:1px solid var(--border); border-radius:6px; padding:0 8px; }
+  summary { cursor:pointer; min-height:44px; padding:12px 0; font-size:13px; font-weight:600; }
+  .thumb-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; padding:8px 0; max-height:65dvh; overflow:auto; }
+  .metrics-panel { grid-column:1/-1; border-top:1px solid var(--border); padding:0 8px; }
+  .announce-toggle { display:flex; gap:8px; align-items:center; min-height:44px; font-size:13px; }
+  .no-game { padding:36px 12px; color:var(--text-secondary); }
+  .no-game-hint { margin-top:8px; font-size:13px; }
+  .compact-games { display:none; }
+  .desktop-games h2 { font-size:13px; padding:8px; color:var(--text-secondary); }
+  .navigation-error { padding:12px; color:var(--danger); font-size:13px; }
+  @media(max-width:1023px), (max-height:650px) {
+    .main-content { display:flex; flex-direction:column; padding:8px; gap:8px; }
+    .player-panel,.game-panel,.thumbnail-panel,.metrics-panel { width:100%; }
+    .game-panel,.game-view { display:contents; }
+    .player-panel { order:1; }
+    .board-area { order:2; }
+    .thumbnail-panel { order:3; }
+    .info-area { order:4; }
+    .legend-area { order:5; }
+    .metrics-panel { order:6; }
+    .desktop-games { display:none; }
+    .compact-games { display:block; }
+    .board-area { width:min(100%,636px); align-self:center; }
+    .eval-area { display:none; }
+    .info-area { width:100%; max-height:none; }
+    .info-area :global(.move-log) { max-height:300px; }
+    .thumb-grid { grid-template-columns:repeat(auto-fill,minmax(80px,1fr)); }
+    .legend-area { width:100%; }
   }
 </style>

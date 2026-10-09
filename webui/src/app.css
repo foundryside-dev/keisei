@@ -2,6 +2,7 @@
 :root {
   /* Backgrounds — warm blacks, aged wood and shadow */
   --bg-primary: #0e0c0a;
+  --action-text: #0e0c0a;
   --bg-secondary: #161310;
   --bg-card: #1e1a15;
 
@@ -20,8 +21,8 @@
 
   /* Borders — warm dark */
   --border: #2e2820;
-  --border-board: #8B7355;
-  --border-board-inner: #b8956a;
+  --border-board: #735538;
+  --border-board-inner: #735538;
   --border-subtle: #221e18;
   --border-white-piece: #4a3e32;
 
@@ -34,7 +35,9 @@
   --accent-teal: #4db8a8;    /* learner, active, positive — celadon */
   --accent-ink: #7eb8d4;     /* opponent, info — pale sumi ink */
   --accent-gold: #c8962e;    /* rank, champion, warning — warm gold */
-  --accent-moss: #6b9e6b;    /* secondary positive */
+  --accent-moss: #6b9e6b;
+  --accent-frontier: #9aacc4;
+  --accent-historical: #b19ad5;    /* secondary positive */
 
   /* Status */
   --danger: #ff6b5a;
@@ -83,6 +86,7 @@
 :root[data-theme="light"] {
   /* Backgrounds — warm off-whites */
   --bg-primary: #f7f3ec;
+  --action-text: #fff;
   --bg-secondary: #ede7da;
   --bg-card: #e4d9c8;
 
@@ -100,8 +104,8 @@
 
   /* Borders — warm brown */
   --border: #b0a090;
-  --border-board: #8B7355;
-  --border-board-inner: #b8956a;
+  --border-board: #735538;
+  --border-board-inner: #735538;
   --border-subtle: #c8b8a0;
   --border-white-piece: #9a8878;
 
@@ -115,6 +119,8 @@
   --accent-ink: #1a5c80;
   --accent-gold: #8c6400;
   --accent-moss: #3a6e3a;
+  --accent-frontier: #405975;
+  --accent-historical: #71418b;
 
   /* Status */
   --danger: #9e1f1f;
@@ -198,3 +204,7 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+button, input, select, summary { font: inherit; }
+button, summary, input, select { touch-action: manipulation; }
+:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }

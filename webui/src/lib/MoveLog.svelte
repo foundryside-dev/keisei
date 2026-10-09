@@ -8,7 +8,7 @@
   /**
    * Index (0-based) of the currently displayed move in the moves array, or -1
    * for "live tail" / no selection. When >= 0 the matching cell is highlighted
-   * and an "← Live" affordance is shown so users can return to follow-mode.
+   * and an "← {tailLabel}" affordance is shown so users can return to follow-mode.
    */
   export let selectedIdx = -1
   /**
@@ -17,6 +17,9 @@
    * Training tab) keep their current behavior.
    */
   export let interactive = false
+  export let following = selectedIdx < 0
+  export let tailLabel = 'Live'
+  let previousSelectedIdx = null
 
   const dispatch = createEventDispatcher()
 
@@ -30,7 +33,7 @@
   $: moves = parseMoves(moveHistoryJson)
   $: rows = buildMoveRows(moves, $notationStyle)
   $: totalMoves = moves.length
-  $: scrubbing = interactive && selectedIdx >= 0 && selectedIdx < totalMoves - 1
+  $: scrubbing = interactive && !following
 
   function selectIdx(idx) {
     if (!interactive) return
@@ -46,6 +49,7 @@
     if (!interactive) return
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
+      e.stopPropagation()
       selectIdx(idx)
     }
   }
@@ -58,17 +62,21 @@
 
   afterUpdate(() => {
     if (!scrollContainer) return
-    if (interactive && selectedIdx >= 0) {
+    if (interactive && !following && selectedIdx >= 0 && previousSelectedIdx !== selectedIdx) {
       // Scrubbing or explicit selection — keep the chosen cell visible.
       const selectedCell = scrollContainer.querySelector('[aria-pressed="true"]')
       if (selectedCell) {
-        selectedCell.scrollIntoView({ block: 'nearest', behavior: 'auto' })
+        const cell = selectedCell.getBoundingClientRect()
+        const region = scrollContainer.getBoundingClientRect()
+        if (cell.top < region.top) scrollContainer.scrollTop += cell.top - region.top
+        else if (cell.bottom > region.bottom) scrollContainer.scrollTop += cell.bottom - region.bottom
       }
-    } else if (wasAtTop) {
+    } else if (following && wasAtTop) {
       // Live-tail mode: only snap to the latest move when the user was already
       // at the top. If they've scrolled to review older moves, leave them be.
       scrollContainer.scrollTop = 0
     }
+    previousSelectedIdx = selectedIdx
   })
 </script>
 
@@ -82,14 +90,14 @@
         title="Return to the live position (End)"
         aria-label="Return to live position"
       >
-        ← Live
+        ← {tailLabel}
       </button>
     {/if}
     <NotationToggle />
   </div>
   <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
   <!-- Scrollable region: keyboard users need to focus this to scroll the move history with arrow keys. -->
-  <div class="table-container" role="log" aria-label="Move history" tabindex="0" bind:this={scrollContainer}>
+  <div class="table-container" role="region" data-move-log aria-label="Move history" tabindex="0" bind:this={scrollContainer}>
     <table>
       <thead>
         <tr>
@@ -177,6 +185,7 @@
     font-weight: 700;
     letter-spacing: 0.5px;
     padding: 4px 8px;
+    min-height:44px;
     text-transform: uppercase;
   }
 
@@ -235,6 +244,7 @@
   }
 
   td.cell {
+    height:44px;
     cursor: pointer;
     border-radius: 2px;
   }

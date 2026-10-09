@@ -34,7 +34,8 @@
     padding: 6px 12px;
     border: 1px solid var(--border);
     border-radius: 6px;
-    height: 46px;
+    min-height: 46px;
+    flex-wrap: wrap;
   }
 
   .tray.black {
@@ -60,6 +61,7 @@
     align-items: center;
     gap: 4px;
     min-height: 32px;
+    flex-wrap: wrap;
   }
 
   .hand-piece {
@@ -82,7 +84,7 @@
     background: var(--accent-teal);
     /* Deliberate hardcode: the teal badge is bright in both themes, and pure
        black gives the highest contrast for this 9px count chip in either. */
-    color: #000;
+    color: var(--action-text);
     font-size: 9px;
     border-radius: 50%;
     width: 14px;

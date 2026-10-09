@@ -1,11 +1,33 @@
-import { writable, derived } from 'svelte/store'
+import { writable, derived, get } from 'svelte/store'
 import { leagueEntries } from './league.js'
 
-export const games = writable([])
-export const selectedGameId = writable(0)
+const gameRows = writable([])
+const selectedId = writable(null)
+export const laneAnnouncement = writable('')
+function reconcile(rows, requested, previous = []) {
+  let selected = rows.find(g => g.game_id === requested)
+  if (!selected) {
+    selected = [...rows].sort((a, b) => Number(!!a.is_over) - Number(!!b.is_over) || a.game_id - b.game_id)[0]
+    if (requested != null) laneAnnouncement.set(selected ? `Lane ${requested + 1} is unavailable. Selected lane ${selected.game_id + 1}.` : 'No training lanes available.')
+  } else {
+    const old = previous.find(g => g.game_id === requested)
+    if (old && ((old.is_over && !selected.is_over) || selected.ply < old.ply)) laneAnnouncement.set(`New game in lane ${requested + 1}`)
+  }
+  selectedId.set(selected?.game_id ?? null)
+}
+export const games = {
+  subscribe: gameRows.subscribe,
+  set(rows) { const old = get(gameRows); gameRows.set(rows); reconcile(rows, get(selectedId), old) },
+  update(fn) { this.set(fn(get(gameRows))) },
+}
+export const selectedGameId = {
+  subscribe: selectedId.subscribe,
+  set(id) { reconcile(get(gameRows), id) },
+  update(fn) { this.set(fn(get(selectedId))) },
+}
 export const selectedGame = derived(
   [games, selectedGameId],
-  ([$games, $id]) => $games.find(g => g.game_id === $id) || $games[0] || null
+  ([$games, $id]) => $games.find(g => g.game_id === $id) || null
 )
 
 export const selectedOpponent = derived(

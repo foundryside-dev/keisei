@@ -61,262 +61,35 @@
 </script>
 
 <section class="scorecard" aria-label="Match scorecard">
-  <div class="player player-black" class:active-turn={!isFinished && turn === 'black'}>
-    <span class="role-icon" aria-hidden="true">☗</span>
-    <span class="role-label">Black</span>
-    <span class="player-name">{game?.name_black ?? '—'}</span>
-    {#if blackEntry?.role}
-      <span class="tier-badge {blackRole?.cssClass}" title={blackRole?.tooltip}>
-        {blackRole?.icon} {blackRole?.label}
-      </span>
-    {/if}
-    {#if blackArchSummary?.arch || blackArchSummary?.topology}
-      <span class="arch-info">{blackArchSummary.arch}{#if blackArchSummary.topology} · {blackArchSummary.topology}{/if}</span>
-    {/if}
-    <span class="spacer"></span>
-    {#if !isFinished && turn === 'black'}
-      <span class="turn-indicator" aria-label="Black to move">
-        <span class="turn-dot" aria-hidden="true"></span> to move
-      </span>
-    {/if}
-    {#if blackElo != null}
-      <span class="elo-pill">{blackElo}</span>
-    {/if}
-  </div>
-
-  <div class="player player-white" class:active-turn={!isFinished && turn === 'white'}>
-    <span class="role-icon" aria-hidden="true">☖</span>
-    <span class="role-label">White</span>
-    <span class="player-name">{game?.name_white ?? '—'}</span>
-    {#if whiteEntry?.role}
-      <span class="tier-badge {whiteRole?.cssClass}" title={whiteRole?.tooltip}>
-        {whiteRole?.icon} {whiteRole?.label}
-      </span>
-    {/if}
-    {#if whiteArchSummary?.arch || whiteArchSummary?.topology}
-      <span class="arch-info">{whiteArchSummary.arch}{#if whiteArchSummary.topology} · {whiteArchSummary.topology}{/if}</span>
-    {/if}
-    <span class="spacer"></span>
-    {#if !isFinished && turn === 'white'}
-      <span class="turn-indicator" aria-label="White to move">
-        <span class="turn-dot" aria-hidden="true"></span> to move
-      </span>
-    {/if}
-    {#if whiteElo != null}
-      <span class="elo-pill">{whiteElo}</span>
-    {/if}
-  </div>
-
+  {#each [{side:'Black',name:game?.name_black,role:blackRole,arch:blackArchSummary,elo:blackElo},{side:'White',name:game?.name_white,role:whiteRole,arch:whiteArchSummary,elo:whiteElo}] as player}
+    <details class="player" class:active-turn={!isFinished && turn === player.side.toLowerCase()}>
+      <summary aria-label={`Player details: ${player.side}, ${player.name || 'Unknown'}`}>
+        <span class="side">{player.side}</span>
+        <span class="name">{player.name || '—'}</span>
+        {#if player.role}<span class="tier">{player.role.label}</span>{/if}
+        {#if player.elo != null}<span class="elo">{player.elo}</span>{/if}
+        <span class="details-hint">Player details</span>
+      </summary>
+      <p>Architecture: {player.arch?.arch || 'Unavailable'}{#if player.arch?.topology} · {player.arch.topology}{/if}</p>
+    </details>
+  {/each}
   <div class="footer-strip">
-    {#if isFinished}
-      <span class="result-badge" role="status">{resultLabel}</span>
-    {:else if scrubbing}
-      <span class="ply-label scrub-label" role="status">
-        Ply {viewedPly} <span class="of">/ live ply {liveTotalPly}</span>
-      </span>
-    {:else}
-      <span class="ply-label" role="status">
-        Ply {viewedPly} <span class="of">of ~{estimatedTotalPly}</span>
-      </span>
-    {/if}
-    <div
-      class="ply-progress"
-      role="progressbar"
-      aria-valuenow={liveTotalPly}
-      aria-valuemin={0}
-      aria-valuemax={estimatedTotalPly}
-      aria-label="Game progress: ply {liveTotalPly} of about {estimatedTotalPly}"
-    >
-      <div class="ply-progress-fill" style="width: {progressPct}%"></div>
-    </div>
-    {#if h2h && h2h.total > 0}
-      <span class="h2h" title="Head-to-head: Black has {h2h.w} wins, {h2h.l} losses, {h2h.d} draws">
-        H2H {h2h.w}–{h2h.l}{#if h2h.d > 0}–{h2h.d}{/if}
-      </span>
-    {/if}
+    {#if isFinished}<span class="result" role="status">{resultLabel}</span>{/if}
+    <span>Ply {viewedPly}{#if scrubbing} / latest {liveTotalPly}{/if} · {turn} to move</span>
+    {#if h2h?.total > 0}<span>Black head-to-head: {h2h.w} wins, {h2h.l} losses, {h2h.d} draws</span>{/if}
   </div>
 </section>
 
 <style>
-  .scorecard {
-    display: flex;
-    flex-direction: column;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .player {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 18px;
-    transition: background-color 0.2s, box-shadow 0.2s;
-  }
-
-  /* Alternate shading: black on the lighter shade, white on the darker — keeps
-     the pair visually distinct without a centerline divider, and mirrors the
-     piece colours (black piece on light board square). */
-  .player-black { background: var(--bg-secondary); }
-  .player-white { background: var(--bg-card); }
-
-  .player.active-turn {
-    box-shadow: inset 4px 0 0 var(--accent-teal);
-  }
-
-  .role-icon { font-size: 18px; color: var(--text-primary); flex-shrink: 0; }
-
-  .role-label {
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    width: 48px;
-    flex-shrink: 0;
-  }
-
-  .player-name {
-    font-size: 18px;
-    font-weight: 700;
-    color: var(--text-primary);
-    line-height: 1.15;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .tier-badge {
-    font-size: 11px;
-    font-weight: 600;
-    padding: 1px 6px;
-    border-radius: 3px;
-    flex-shrink: 0;
-  }
-  .tier-badge.role-frontier { color: #7b8fa8; background: rgba(123, 143, 168, 0.12); }
-  .tier-badge.role-recent { color: var(--accent-gold); background: var(--badge-bg-gold); }
-  .tier-badge.role-dynamic { color: var(--accent-teal); background: var(--badge-bg-teal); }
-  .tier-badge.role-historical { color: #9b7ec8; background: rgba(155, 126, 200, 0.12); }
-  .tier-badge.role-unknown { color: var(--text-muted); background: rgba(128, 128, 128, 0.12); }
-
-  .arch-info {
-    font-size: 12px;
-    color: var(--text-muted);
-    font-family: monospace;
-    flex-shrink: 0;
-  }
-
-  .spacer { flex: 1; }
-
-  .turn-indicator {
-    font-size: 12px;
-    color: var(--accent-teal);
-    font-weight: 600;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex-shrink: 0;
-  }
-
-  .turn-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--accent-teal);
-    box-shadow: 0 0 0 2px rgba(77, 184, 168, 0.25);
-    animation: pulse 1.5s ease-in-out infinite;
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.55; transform: scale(0.85); }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .turn-dot { animation: none; }
-  }
-
-  .elo-pill {
-    font-family: monospace;
-    font-size: 14px;
-    font-weight: 700;
-    color: var(--text-primary);
-    background: var(--bg-primary);
-    padding: 3px 12px;
-    border-radius: 12px;
-    border: 1px solid var(--border);
-    flex-shrink: 0;
-  }
-
-  .footer-strip {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 8px 18px;
-    background: var(--bg-primary);
-    border-top: 1px solid var(--border);
-    font-size: 12px;
-    color: var(--text-secondary);
-  }
-
-  .ply-label {
-    font-family: monospace;
-    font-weight: 700;
-    color: var(--text-primary);
-    flex-shrink: 0;
-  }
-  .ply-label .of {
-    color: var(--text-muted);
-    font-weight: 400;
-  }
-  .scrub-label .of { color: var(--accent-gold); font-weight: 600; }
-
-  .ply-progress {
-    flex: 1;
-    height: 4px;
-    background: var(--bg-card);
-    border-radius: 2px;
-    overflow: hidden;
-    min-width: 80px;
-  }
-  .ply-progress-fill {
-    height: 100%;
-    background: var(--accent-teal);
-    transition: width 0.3s ease;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .ply-progress-fill { transition: none; }
-  }
-
-  .h2h {
-    font-family: monospace;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: var(--text-muted);
-    flex-shrink: 0;
-  }
-
-  .result-badge {
-    background: var(--badge-bg-teal);
-    color: var(--accent-teal);
-    font-weight: 700;
-    padding: 3px 10px;
-    border-radius: 4px;
-    text-transform: capitalize;
-    flex-shrink: 0;
-  }
-
-  @media (max-width: 768px) {
-    .player {
-      padding: 8px 12px;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-    .player-name { font-size: 16px; }
-    .role-label { width: auto; }
-    .arch-info { display: none; }
-    .footer-strip {
-      padding: 6px 12px;
-      flex-wrap: wrap;
-    }
-    .ply-progress { flex-basis: 100%; }
-  }
+  .scorecard { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); border-bottom:1px solid var(--border); }
+  .player { background:var(--bg-secondary); min-width:0; }
+  .player.active-turn { box-shadow:inset 3px 0 0 var(--accent-teal); }
+  summary { display:flex; align-items:center; gap:6px 10px; flex-wrap:wrap; min-height:44px; padding:6px 12px; cursor:pointer; font-size:13px; }
+  .name { overflow-wrap:anywhere; font-weight:600; min-width:0; flex:1; }
+  .side,.tier,.details-hint { color:var(--text-secondary); font-size:12px; }
+  .elo { color:var(--accent-teal); font-weight:700; }
+  p { padding:8px 12px; font-size:13px; overflow-wrap:anywhere; }
+  .footer-strip { grid-column:1/-1; display:flex; flex-wrap:wrap; gap:8px 24px; font-size:12px; color:var(--text-secondary); padding:4px 12px; }
+  .result { color:var(--accent-teal); }
+  @media(max-width:600px) { summary { padding:6px 8px; gap:4px 8px; } .name { flex-basis:100%; order:1; } .details-hint { order:2; } }
 </style>

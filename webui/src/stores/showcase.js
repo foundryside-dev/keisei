@@ -1,4 +1,4 @@
-import { writable, derived, get } from 'svelte/store'
+import { writable, derived } from 'svelte/store'
 
 /** Active showcase game metadata */
 export const showcaseGame = writable(null)
@@ -43,7 +43,7 @@ export const showcaseDisplayedMove = derived(
 /** True when the user has scrubbed off "live" — i.e. selectedPly is set. */
 export const isScrubbing = derived(
   [showcaseMoves, showcaseSelectedPly],
-  ([moves, selectedIdx]) => selectedIdx != null && selectedIdx < moves.length - 1
+  ([moves, selectedIdx]) => selectedIdx != null
 )
 
 /** Win probability history for the graph */

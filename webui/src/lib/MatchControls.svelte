@@ -11,6 +11,7 @@
    * screen real estate. The user can expand explicitly.
    */
   export let collapsed = false
+  export let archived = false
   let expanded = false
 
   // Approximate ms-per-move so users understand what slow/normal/fast mean.
@@ -50,7 +51,7 @@
   }
 
   function changeSpeed(newSpeed) {
-    if (!runningMatch) return
+    if (archived || !runningMatch) return
     sendShowcaseCommand({ type: 'change_showcase_speed', queue_id: runningMatch.id, speed: newSpeed })
   }
 
@@ -73,7 +74,7 @@
         <button
           class:active={runningMatch?.speed === s}
           aria-pressed={runningMatch?.speed === s}
-          disabled={!runningMatch || !$sidecarAlive || $connectionState !== 'connected' || !!$showcaseCommandPending}
+          disabled={archived || !runningMatch || !$sidecarAlive || $connectionState !== 'connected' || !!$showcaseCommandPending}
           on:click={() => changeSpeed(s)}
           title={SPEED_HINTS[s]}
         >{s}</button>
@@ -159,7 +160,7 @@
 
   .new-match-btn {
     padding: 6px 14px;
-    min-height: 36px;
+    min-height: 44px;
     font-size: 13px;
     font-weight: 600;
     border: 1px solid var(--accent-teal);
@@ -188,8 +189,8 @@
     cursor: pointer;
     font-size: 16px;
     line-height: 1;
-    min-width: 28px;
-    min-height: 28px;
+    min-width: 44px;
+    min-height: 44px;
     padding: 0;
   }
   .collapse-btn:hover { color: var(--text-primary); border-color: var(--text-secondary); }
@@ -201,7 +202,7 @@
   select {
     max-width: 100%;
     padding: 6px 8px;
-    min-height: 36px;
+    min-height: 44px;
     font-size: 13px;
     border: 1px solid var(--border);
     border-radius: 4px;
@@ -214,8 +215,9 @@
   .speed-controls .label { font-size: 12px; color: var(--text-secondary); }
 
   .speed-controls button {
+    min-width:44px;
     padding: 4px 10px;
-    min-height: 32px;
+    min-height: 44px;
     font-size: 12px;
     border: 1px solid var(--border);
     border-radius: 4px;
@@ -224,7 +226,7 @@
     cursor: pointer;
     text-transform: capitalize;
   }
-  .speed-controls.compact button { min-height: 28px; padding: 2px 8px; font-size: 11px; }
+  .speed-controls.compact button { min-height: 44px; padding: 2px 8px; font-size: 11px; }
 
   .speed-controls button[aria-pressed='true'] {
     border-color: var(--tab-active-border);
@@ -236,13 +238,13 @@
 
   .start-btn {
     padding: 6px 16px;
-    min-height: 36px;
+    min-height: 44px;
     font-size: 13px;
     font-weight: 600;
     border: 1px solid var(--accent-teal);
     border-radius: 4px;
     background: var(--accent-teal);
-    color: #fff;
+    color: var(--action-text);
     cursor: pointer;
   }
   .start-btn:disabled { opacity: 0.4; cursor: not-allowed; }

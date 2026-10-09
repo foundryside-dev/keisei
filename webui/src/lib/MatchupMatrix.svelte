@@ -1,6 +1,10 @@
 <script>
   import { leagueRanked, leagueEntries, focusedEntryId, headToHead } from '../stores/league.js'
   import { getRoleIcon } from './roleIcons.js'
+  import { matchupIdentity, matchupRows } from './matchupRows.js'
+
+  let selectedPlayer = ''
+  let showRecordList = false
 
   /** Current learner display_name — used to build an aggregate "Trainer" row */
   export let learnerName = null
@@ -23,6 +27,7 @@
   // The trainer row id is 'trainer' (string, won't collide with numeric ids)
   $: participants = (() => {
     const p = entries.map(e => ({
+      ...e,
       id: e.id,
       label: e.display_name || e.architecture,
       shortLabel: getRoleIcon(e.role) + ' ' + shortName(e.display_name || e.architecture),
@@ -31,7 +36,7 @@
     if (hasTrainerRow) {
       p.unshift({
         id: 'trainer',
-        label: learnerName + ' (all)',
+        label: learnerName + ' · Trainer aggregate (all snapshots)',
         shortLabel: shortName(learnerName) + '*',
         isTrainer: true,
       })
@@ -98,6 +103,16 @@
     return h2h.get(`${rowId}-${colId}`) || null
   }
 
+  let rows = []
+  let hasAnyRecords = false
+  $: {
+    // cellData closes over both stores; declare those reactive dependencies.
+    h2h; trainerSnapshotIds
+    rows = matchupRows(participants, cellData, selectedPlayer)
+    hasAnyRecords = matchupRows(participants, cellData).length > 0
+  }
+  $: if (selectedPlayer && !participants.some(p => String(p.id) === selectedPlayer)) selectedPlayer = ''
+
   function cellColor(winRate) {
     if (winRate == null) return 'transparent'
     // Red (0%) → neutral (50%) → green (100%)
@@ -119,28 +134,39 @@
 <div class="matrix-card">
   <h2 class="section-header">Head-to-Head</h2>
 
-  <!-- Mobile list view -->
-  <div class="h2h-list-view">
-    {#if participants.filter(p => !p.isPlaceholder).length === 0}
-      <p class="empty">No matchup data yet.</p>
-    {:else}
-      {#each participants.filter(p => !p.isPlaceholder) as row}
-        {#each participants.filter(p => !p.isPlaceholder && p.id !== row.id) as col}
-          {@const cell = cellData(row.id, col.id)}
-          {#if cell && cell.total > 0}
-            <div class="h2h-item">
-              <span class="h2h-names">{row.shortLabel} vs {col.shortLabel}</span>
-              <span class="h2h-record">{cell.w}W {cell.l}L {cell.d}D</span>
-              <span class="h2h-rate" style="color: {cell.winRate >= 0.5 ? 'var(--accent-teal)' : 'var(--danger)'}">{formatRate(cell.winRate)}</span>
-            </div>
-          {/if}
-        {/each}
+  <label class="player-filter">Player
+    <select bind:value={selectedPlayer}>
+      <option value="">All players</option>
+      {#each participants.filter(p => !p.isPlaceholder) as player}
+        <option value={String(player.id)}>{matchupIdentity(player)}</option>
       {/each}
+    </select>
+  </label>
+  <button class="list-toggle" aria-expanded={showRecordList} aria-controls="matchup-records" on:click={() => showRecordList = !showRecordList}>
+    {showRecordList ? 'Hide' : 'Show'} matchup record list
+  </button>
+  <div id="matchup-records" class="h2h-list-view" class:expanded={showRecordList || selectedPlayer !== '' || !hasAnyRecords}>
+    {#if !hasAnyRecords}
+      <p class="empty">No matchup data yet.</p>
+    {:else if rows.length === 0}
+      <p class="empty">No games for this player filter.</p>
+    {:else}
+      <p class="record-help">Each pair appears once. Wins and losses are from the first named player's perspective. Trainer aggregates are separate from individual snapshots.</p>
+      <ul class="record-list">
+        {#each rows as row}
+          <li class="h2h-item" class:aggregate={row.player.isTrainer || row.opponent.isTrainer}>
+            <span class="h2h-names">{matchupIdentity(row.player)} <span class="versus">vs</span> {matchupIdentity(row.opponent)}</span>
+            <span class="perspective">Record from {matchupIdentity(row.player)} perspective</span>
+            <span class="h2h-record">{row.w} wins · {row.l} losses · {row.d} draws · {row.total} games</span>
+            <span class="h2h-rate">{formatRate(row.winRate)} wins</span>
+          </li>
+        {/each}
+      </ul>
     {/if}
   </div>
 
   <!-- Desktop matrix view -->
-  <div class="matrix-desktop">
+  <div class="matrix-desktop" class:filtered={selectedPlayer !== ''}>
   <div class="matrix-legend" aria-label="Color legend">
     <span class="legend-swatch" style="background: rgba(224, 80, 80, 0.35)"></span>
     <span class="legend-label">0%</span>
@@ -151,13 +177,14 @@
     <span class="legend-swatch" style="background: rgba(77, 184, 168, 0.43)"></span>
     <span class="legend-label">100%</span>
   </div>
-    <div class="matrix-scroll">
+    <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
+    <div class="matrix-scroll" role="region" aria-label="Scrollable comparison matrix" tabindex="0">
       <table class="matrix" aria-label="Head-to-head win rate matrix">
         <thead>
           <tr>
             <th class="corner" scope="col"></th>
             {#each participants as col}
-              <th class="col-header" class:hl={focused != null && col.id === focused} class:placeholder={col.isPlaceholder} title={col.label} scope="col">
+              <th class="col-header" class:hl={focused != null && col.id === focused} class:placeholder={col.isPlaceholder} aria-label={matchupIdentity(col)} title={matchupIdentity(col)} scope="col">
                 <span class="rotated">{col.shortLabel}</span>
               </th>
             {/each}
@@ -166,7 +193,7 @@
         <tbody>
           {#each participants as row}
             <tr class:hl-row={focused != null && row.id === focused}>
-              <th class="row-header" class:trainer-row={row.isTrainer} class:hl={focused != null && row.id === focused} class:placeholder={row.isPlaceholder} title={row.label} scope="row">{row.shortLabel}</th>
+              <th class="row-header" class:trainer-row={row.isTrainer} class:hl={focused != null && row.id === focused} class:placeholder={row.isPlaceholder} aria-label={matchupIdentity(row)} title={matchupIdentity(row)} scope="row">{row.shortLabel}</th>
               {#each participants as col}
                 {#if row.id === col.id}
                   <td class="self-cell" class:hl={focused != null && (row.id === focused || col.id === focused)}>—</td>
@@ -177,8 +204,8 @@
                     class="rate-cell"
                     class:hl={focused != null && (row.id === focused || col.id === focused)}
                     style="background: {cellColor(cellData(row.id, col.id).winRate)}"
-                    title="{row.label} vs {col.label}: {cellData(row.id, col.id).w}W {cellData(row.id, col.id).l}L {cellData(row.id, col.id).d}D ({cellData(row.id, col.id).total} games)"
-                    aria-label="{row.label} vs {col.label}: {formatRate(cellData(row.id, col.id).winRate)} win rate, {cellData(row.id, col.id).w} wins, {cellData(row.id, col.id).l} losses, {cellData(row.id, col.id).d} draws"
+                    title="{matchupIdentity(row)} vs {matchupIdentity(col)}: {cellData(row.id, col.id).w}W {cellData(row.id, col.id).l}L {cellData(row.id, col.id).d}D ({cellData(row.id, col.id).total} games)"
+                    aria-label="{matchupIdentity(row)} vs {matchupIdentity(col)}: {formatRate(cellData(row.id, col.id).winRate)} win rate, {cellData(row.id, col.id).w} wins, {cellData(row.id, col.id).l} losses, {cellData(row.id, col.id).d} draws"
                   >
                     {formatRate(cellData(row.id, col.id).winRate)}
                   </td>
@@ -211,10 +238,11 @@
     flex: 1;
     display: flex;
     align-items: flex-start;
-    justify-content: center;
+    justify-content: flex-start;
   }
 
   .matrix {
+    margin-inline: auto;
     border-collapse: collapse;
     font-size: 15px;
     white-space: nowrap;
@@ -394,5 +422,23 @@
   .rate-cell:focus-visible {
     outline: 2px solid var(--focus-ring);
     outline-offset: -2px;
+  }
+  .player-filter { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; font-size: 13px; }
+  select { min-height: 44px; min-width: 0; width: 100%; color: var(--text-primary); background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px; padding: 8px; }
+  .list-toggle { align-self: flex-start; min-height: 44px; margin-bottom: 8px; padding: 8px 12px; color: var(--text-primary); background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
+  .h2h-list-view.expanded { display: flex; flex: none; max-height: 48vh; }
+  .matrix-desktop.filtered { display: none; }
+  .record-list { padding: 0; margin: 0; list-style: none; }
+  .record-help { font-size: 12px; color: var(--text-muted); margin: 0 0 8px; }
+  .h2h-item { display: grid; gap: 4px; padding: 10px 0; border-bottom: 1px solid var(--border-subtle); }
+  .h2h-names { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
+  .perspective { font-size: 12px; color: var(--text-muted); overflow-wrap: anywhere; }
+  .h2h-rate { text-align: left; color: var(--text-primary); }
+  .aggregate { border-left: 3px solid var(--accent-gold); padding-left: 8px; }
+  .versus { color: var(--text-muted); }
+  @media (max-width: 768px) {
+    .list-toggle { display: none; }
+    .h2h-list-view, .h2h-list-view.expanded { display: flex; overflow: visible; max-height: none; }
+    .matrix-card { overflow: visible; }
   }
 </style>
