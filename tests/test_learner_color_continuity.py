@@ -60,7 +60,7 @@ def test_live_game_keeps_colors_and_turn_order_across_epochs(tmp_path, epochs_pe
         learner_indices.append(result.learner_indices.tolist())
         return result
 
-    # An odd epoch length leaves the opponent to move in one lane. Flushing
+    # An odd epoch length leaves the opponent to move in one lane. Completing
     # pending decisions for PPO must not transfer either lane to another color.
     with (
         patch.object(katago_loop, "split_merge_step", side_effect=capture),
@@ -71,9 +71,9 @@ def test_live_game_keeps_colors_and_turn_order_across_epochs(tmp_path, epochs_pe
     ):
         loop.run(num_epochs=2, steps_per_epoch=3)
 
-    assert len(sides) == 6
+    assert len(sides) == 8
     assert all(np.array_equal(side, [0, 1]) for side in sides)
-    assert learner_indices == [[0], [1], [0], [1], [0], [1]]
+    assert learner_indices == [[0], [1], [0], [], [0, 1], [], [0, 1], []]
     assert random_colors.call_count == 1
     env.reset.assert_called_once()
 
@@ -101,6 +101,6 @@ def test_only_completed_game_gets_new_color_before_next_epoch(tmp_path):
     ):
         loop.run(num_epochs=2, steps_per_epoch=2)
 
-    assert [side.tolist() for side in sides] == [[0, 1], [0, 1], [1, 1], [1, 1]]
+    assert [side.tolist() for side in sides] == [[0, 1], [0, 1], [1, 1], [1, 1], [1, 1], [1, 1]]
     assert random_colors.call_count == 2
     env.reset.assert_called_once()

@@ -28,6 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rejects double pawns and unpromoted pieces stranded on forbidden ranks.
 - **Spectator promotion notation** — already-promoted pawns, lances, and knights
   no longer receive a second promotion marker when moving onto their last ranks.
+- **PPO critic supervision** — completed games train W/D/L predictions for all
+  recorded positions, including earlier losing-side moves and games spanning
+  rollout boundaries. Delayed positions are used only for critic supervision.
+- **PPO epoch boundaries** — finish outstanding opponent responses before an
+  optimizer update, preserving terminal rewards and truncation bootstraps.
+  Masked vector stepping pauses unrelated games during that completion step.
 - **League dashboard records** — lifetime totals and W/L/D include all results;
   learner summaries use its latest ten tournament epochs. Sorting preserves
   ranking and champion identity on a shared composite Elo scale. Historical

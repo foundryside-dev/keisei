@@ -18,7 +18,7 @@ from keisei.training.katago_loop import KataGoTrainingLoop
 
 def _make_mock_katago_vecenv(
     num_envs: int = 2, *, terminate_at_step: int | None = None,
-    alternate_players: bool = False,
+    alternate_players: bool = True,
     material_balance: int = 0,
 ) -> MagicMock:
     """Create a mock VecEnv that returns correct shapes for KataGo mode.
@@ -37,42 +37,48 @@ def _make_mock_katago_vecenv(
     mock.truncation_rate = 0.0
     mock.draw_rate = 0.0
     step_count = [0]
+    observations = np.zeros((num_envs, 50, 9, 9), dtype=np.float32)
+    current_players = np.zeros(num_envs, dtype=np.uint8)
+    ply_counts = np.zeros(num_envs, dtype=np.uint16)
 
     def make_reset_result():
+        observations[:] = rng.standard_normal(observations.shape).astype(np.float32)
+        current_players.fill(0)
+        ply_counts.fill(0)
         result = MagicMock()
-        result.observations = rng.standard_normal((num_envs, 50, 9, 9)).astype(
-            np.float32
-        )
+        result.observations = observations.copy()
         result.legal_masks = np.ones((num_envs, 11259), dtype=bool)
         return result
 
-    def make_step_result(actions):
+    def make_step_result(actions, active_mask=None):
         step_count[0] += 1
+        active = np.ones(num_envs, dtype=bool) if active_mask is None else np.asarray(active_mask, dtype=bool)
+        observations[active] = rng.standard_normal((int(active.sum()), 50, 9, 9)).astype(np.float32)
+        ply_counts[active] += 1
+        if alternate_players:
+            current_players[active] = 1 - current_players[active]
         result = MagicMock()
-        result.observations = rng.standard_normal((num_envs, 50, 9, 9)).astype(
-            np.float32
-        )
         result.legal_masks = np.ones((num_envs, 11259), dtype=bool)
         result.rewards = np.zeros(num_envs, dtype=np.float32)
         result.terminated = np.zeros(num_envs, dtype=bool)
         result.truncated = np.zeros(num_envs, dtype=bool)
-        if alternate_players:
-            # Alternate: even steps = all Black, odd steps = all White
-            result.current_players = np.full(
-                num_envs, step_count[0] % 2, dtype=np.uint8,
-            )
-        else:
-            result.current_players = np.zeros(num_envs, dtype=np.uint8)
+        result.terminal_observations = observations.copy()
 
         # step_metadata with material balance (per-step, not terminal-only)
         result.step_metadata = MagicMock()
-        result.step_metadata.ply_count = np.zeros(num_envs, dtype=np.uint16)
-        result.step_metadata.material_balance = np.full(num_envs, material_balance, dtype=np.int32)
+        result.step_metadata.ply_count = ply_counts.copy()
+        result.step_metadata.material_balance = np.where(active, material_balance, 0).astype(np.int32)
 
-        if terminate_at_step is not None and step_count[0] == terminate_at_step:
+        if terminate_at_step is not None and step_count[0] == terminate_at_step and active[0]:
             result.terminated[0] = True
             result.rewards[0] = 1.0
+            observations[0] = rng.standard_normal((50, 9, 9)).astype(np.float32)
+            current_players[0] = 0
+            ply_counts[0] = 0
+            mock.episodes_completed += 1
 
+        result.observations = observations.copy()
+        result.current_players = current_players.copy()
         return result
 
     mock.reset.side_effect = lambda: make_reset_result()

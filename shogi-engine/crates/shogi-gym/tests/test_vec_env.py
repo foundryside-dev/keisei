@@ -315,6 +315,118 @@ class TestVecEnvStepping:
             masks = np.asarray(step_result.legal_masks)
 
 
+class TestVecEnvMaskedStepping:
+    @pytest.mark.parametrize("num_envs", [2, 64])
+    @pytest.mark.parametrize("mode", ["default", "katago"])
+    def test_only_active_lanes_advance(self, num_envs, mode):
+        env = VecEnv(
+            num_envs=num_envs, max_ply=100, observation_mode=mode,
+            action_mode="spatial" if mode == "katago" else "default",
+        )
+        before = env.reset()
+        before_obs = np.asarray(before.observations).copy()
+        before_masks = np.asarray(before.legal_masks).copy()
+        before_games = env.get_spectator_data()
+        active = [i % 2 == 0 for i in range(num_envs)]
+        actions = [int(np.flatnonzero(before_masks[i])[0]) if active[i] else -1 for i in range(num_envs)]
+
+        result = env.step(actions, active_mask=active)
+        after_games = env.get_spectator_data()
+
+        assert np.asarray(result.observations).shape == before_obs.shape
+        assert np.asarray(result.legal_masks).shape == before_masks.shape
+        for i in range(num_envs):
+            if active[i]:
+                assert after_games[i]["ply"] == 1
+                assert len(after_games[i]["move_history"]) == 1
+                assert np.asarray(result.current_players)[i] == 1
+            else:
+                assert after_games[i] == before_games[i]
+                np.testing.assert_array_equal(np.asarray(result.observations)[i], before_obs[i])
+                np.testing.assert_array_equal(np.asarray(result.legal_masks)[i], before_masks[i])
+                assert np.asarray(result.current_players)[i] == 0
+        assert env.episodes_completed == 0
+
+    def test_paused_lanes_do_not_repeat_previous_truncations(self):
+        env = VecEnv(num_envs=2, max_ply=1)
+        initial = env.reset()
+        masks = np.asarray(initial.legal_masks)
+        completed = env.step([int(np.flatnonzero(mask)[0]) for mask in masks])
+        assert np.asarray(completed.truncated).all()
+        before_games = env.get_spectator_data()
+
+        result = env.step([-1, env.action_space_size * 10], active_mask=[False, False])
+
+        assert env.get_spectator_data() == before_games
+        assert env.episodes_completed == 2
+        assert env.episodes_truncated == 2
+        np.testing.assert_array_equal(result.observations, completed.observations)
+        np.testing.assert_array_equal(result.legal_masks, completed.legal_masks)
+        assert not np.asarray(result.terminated).any()
+        assert not np.asarray(result.truncated).any()
+        assert not np.asarray(result.rewards).any()
+        np.testing.assert_array_equal(result.step_metadata.captured_piece, [255, 255])
+        np.testing.assert_array_equal(result.step_metadata.termination_reason, [0, 0])
+        np.testing.assert_array_equal(result.step_metadata.ply_count, [0, 0])
+
+    @pytest.mark.parametrize("active", [[], [True], [True, True, True]])
+    def test_wrong_mask_length_rejected_without_advancing_any_lane(self, active):
+        env = VecEnv(num_envs=2, max_ply=100)
+        masks = np.asarray(env.reset().legal_masks)
+        actions = [int(np.flatnonzero(mask)[0]) for mask in masks]
+        before = env.get_spectator_data()
+
+        with pytest.raises(ValueError, match="active_mask"):
+            env.step(actions, active_mask=active)
+
+        assert env.get_spectator_data() == before
+        assert env.episodes_completed == 0
+
+    def test_invalid_active_action_rejects_the_entire_batch(self):
+        env = VecEnv(num_envs=3, max_ply=1)
+        masks = np.asarray(env.reset().legal_masks)
+        before = env.get_spectator_data()
+        actions = [int(np.flatnonzero(masks[0])[0]), -1, int(np.flatnonzero(~masks[2])[0])]
+
+        with pytest.raises(RuntimeError, match="env 2"):
+            env.step(actions, active_mask=[True, False, True])
+
+        assert env.get_spectator_data() == before
+        assert env.episodes_completed == 0
+
+    def test_reset_updates_paused_players(self):
+        env = VecEnv(num_envs=2, max_ply=100)
+        masks = np.asarray(env.reset().legal_masks)
+        advanced = env.step([int(np.flatnonzero(mask)[0]) for mask in masks])
+        np.testing.assert_array_equal(advanced.current_players, [1, 1])
+        reset = env.reset()
+
+        result = env.step([-1, -1], active_mask=[False, False])
+
+        np.testing.assert_array_equal(result.current_players, [0, 0])
+        np.testing.assert_array_equal(result.observations, reset.observations)
+        np.testing.assert_array_equal(result.legal_masks, reset.legal_masks)
+
+    def test_all_active_mask_matches_unmasked_steps(self):
+        ordinary = VecEnv(num_envs=2, max_ply=3)
+        masked = VecEnv(num_envs=2, max_ply=3)
+        masks = np.asarray(ordinary.reset().legal_masks)
+        masked.reset()
+
+        for _ in range(5):
+            actions = [int(np.flatnonzero(mask)[0]) for mask in masks]
+            expected = ordinary.step(actions)
+            actual = masked.step(actions, active_mask=[True, True])
+            for field in (
+                "observations", "legal_masks", "rewards", "terminated", "truncated",
+                "terminal_observations", "current_players",
+            ):
+                np.testing.assert_array_equal(getattr(actual, field), getattr(expected, field))
+            assert masked.get_spectator_data() == ordinary.get_spectator_data()
+            assert masked.episodes_completed == ordinary.episodes_completed
+            masks = np.asarray(expected.legal_masks)
+
+
 class TestVecEnvObservation:
     """Gap #9b: VecEnv observation consistency tests."""
 

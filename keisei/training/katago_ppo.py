@@ -17,6 +17,7 @@ from torch.nn.parallel import DistributedDataParallel
 from keisei.sl.dataset import SCORE_NORMALIZATION
 from keisei.training.gae import compute_gae_gpu
 from keisei.training.models.katago_base import KataGoBaseModel
+from keisei.training.outcomes import GameOutcomeBatch
 from keisei.training.policy import masked_categorical
 from keisei.training.value_adapter import wdl_cross_entropy_loss as wdl_cross_entropy_loss
 
@@ -633,7 +634,15 @@ class KataGoPPOAlgorithm:
         next_values: torch.Tensor,
         value_adapter: Any | None = None,
         heartbeat_fn: Any | None = None,
+        critic_batch: GameOutcomeBatch | None = None,
     ) -> dict[str, float]:
+        """Update the actor rollout and optional completed-game value targets.
+
+        Historical critic observations enter only W/D/L cross-entropy. Actor
+        actions, likelihoods, advantages and score targets always come from
+        the current rollout. A supplied critic batch replaces rollout W/D/L
+        labels, including when that batch is explicitly empty.
+        """
         from keisei.training.gae import compute_gae  # noqa: PLC0415 — local import for circular-import safety
 
         self.forward_model.eval()
@@ -662,6 +671,34 @@ class KataGoPPOAlgorithm:
                 raise ValueError("DDP requires equal rollout sample counts and update schedules across ranks")
 
         data = buffer.flatten()
+        # Every DDP rank performs the same validation collectives, even when
+        # its completed-game batch is empty or absent. Validate before any
+        # forward so one malformed local batch cannot strand other ranks.
+        critic_shape_valid = critic_batch is None or (
+            critic_batch.observations.ndim == len(buffer.obs_shape) + 1
+            and tuple(critic_batch.observations.shape[1:]) == buffer.obs_shape
+            and torch.is_floating_point(critic_batch.observations)
+            and critic_batch.value_categories.shape == (critic_batch.observations.shape[0],)
+            and critic_batch.value_categories.dtype == torch.long
+        )
+        self._require_update_condition(
+            torch.tensor(critic_shape_valid, device=device),
+            "Invalid completed-game critic batch shapes or dtypes",
+        )
+        critic_observations = None
+        critic_categories = None
+        critic_count = 0
+        critic_finite = torch.tensor(True, device=device)
+        critic_labels_valid = torch.tensor(True, device=device)
+        if critic_batch is not None:
+            critic_observations = critic_batch.observations.detach().cpu()
+            critic_categories = critic_batch.value_categories.detach().cpu()
+            critic_count = critic_observations.shape[0]
+            critic_finite = torch.isfinite(critic_observations).all().to(device)
+            critic_labels_valid = ((critic_categories >= 0) & (critic_categories <= 2)).all().to(device)
+        self._require_update_condition(critic_finite, "Non-finite completed-game critic observations")
+        self._require_update_condition(critic_labels_valid, "Invalid completed-game critic value categories")
+
         T = buffer.size
         N = buffer.num_envs
         total_samples = data["rewards"].numel()
@@ -844,9 +881,14 @@ class KataGoPPOAlgorithm:
         last_value_logits = None
         last_value_cats = None
 
+        actor_batches = (total_samples + batch_size - 1) // batch_size
         for _ in range(self.params.epochs_per_batch):
             indices = torch.randperm(total_samples, device=device)
-            for start in range(0, total_samples, batch_size):
+            # Balance all completed observations over the existing actor
+            # schedule. Different ranks may have different critic counts,
+            # but never perform extra DDP forwards or backwards for them.
+            critic_splits = torch.tensor_split(torch.randperm(critic_count), actor_batches)
+            for batch_index, start in enumerate(range(0, total_samples, batch_size)):
                 end = min(start + batch_size, total_samples)
                 idx = indices[start:end]
 
@@ -858,6 +900,13 @@ class KataGoPPOAlgorithm:
                 batch_legal_masks = gpu_legal_masks[idx]
                 batch_value_cats = gpu_value_cats[idx]
                 batch_score_targets = gpu_score_targets[idx]
+                forward_obs = batch_obs
+                if critic_observations is not None and critic_categories is not None:
+                    critic_idx = critic_splits[batch_index]
+                    batch_value_cats = critic_categories[critic_idx].to(device)
+                    if critic_idx.numel():
+                        critic_obs = critic_observations[critic_idx].to(device=device, dtype=batch_obs.dtype)
+                        forward_obs = torch.cat([batch_obs, critic_obs], dim=0)
 
                 if device.type == "cuda":
                     _fb_stream = torch.cuda.current_stream(device)
@@ -868,12 +917,19 @@ class KataGoPPOAlgorithm:
                 with autocast(device_type=autocast_device, dtype=amp_dtype, enabled=self.params.use_amp):
                     # Freeze normalization while retaining the gradient graph.
                     if self.compiled_model is not None:
-                        output = self.compiled_model(batch_obs)
+                        output = self.compiled_model(forward_obs)
                     else:
-                        output = self.forward_model(batch_obs)
+                        output = self.forward_model(forward_obs)
+
+                    actor_count = batch_obs.shape[0]
+                    value_logits = (
+                        output.value_logits[actor_count:]
+                        if critic_batch is not None else output.value_logits
+                    )
+                    score_predictions = output.score_lead[:actor_count]
 
                     # Policy loss (clipped surrogate)
-                    flat_logits = output.policy_logits.reshape(batch_obs.shape[0], -1)
+                    flat_logits = output.policy_logits[:actor_count].reshape(actor_count, -1)
 
                     # Coordinate failures before any rank enters backward.
                     self._require_finite(flat_logits, "raw policy logits")
@@ -904,11 +960,11 @@ class KataGoPPOAlgorithm:
                     # Value + score loss — dispatch through adapter if provided
                     if value_adapter is not None:
                         value_score_loss = value_adapter.compute_value_loss(
-                            output.value_logits,
+                            value_logits,
                             returns=None,
                             value_cats=batch_value_cats,
                             score_targets=batch_score_targets,
-                            score_pred=output.score_lead,
+                            score_pred=score_predictions,
                         )
                         # For metrics tracking, decompose (adapter combines them)
                         value_loss = value_score_loss  # combined
@@ -918,7 +974,7 @@ class KataGoPPOAlgorithm:
                         value_loss = _zero
                         if self.params.lambda_value:
                             value_loss = wdl_cross_entropy_loss(
-                                output.value_logits, batch_value_cats,
+                                value_logits, batch_value_cats,
                             )
 
                         # Score loss (MSE on normalized material balance).
@@ -926,7 +982,7 @@ class KataGoPPOAlgorithm:
                         score_loss = _zero
                         if self.params.lambda_score:
                             score_loss = F.mse_loss(
-                                output.score_lead.float().squeeze(-1), batch_score_targets,
+                                score_predictions.float().squeeze(-1), batch_score_targets,
                             )
 
                         value_score_loss = (
@@ -987,8 +1043,9 @@ class KataGoPPOAlgorithm:
                 num_updates += 1
 
                 # Save last mini-batch for value metrics (replaces extra eval pass)
-                last_value_logits = output.value_logits.detach()
-                last_value_cats = batch_value_cats
+                if batch_value_cats.numel():
+                    last_value_logits = value_logits.detach()
+                    last_value_cats = batch_value_cats
 
                 if heartbeat_fn is not None:
                     heartbeat_fn()

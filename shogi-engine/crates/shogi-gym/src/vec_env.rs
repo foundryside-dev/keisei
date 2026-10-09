@@ -303,7 +303,8 @@ impl VecEnv {
         self.legal_moves_cache[i].extend(move_list.iter().copied());
     }
 
-    /// Apply decoded moves to all environments, with panic isolation.
+    /// Apply decoded moves to active environments, with panic isolation.
+    /// A `None` move pauses its environment and emits no transition.
     ///
     /// Each environment's step is wrapped in `catch_unwind`. If an individual
     /// environment panics (logic bug, OOB, etc.) it is auto-reset to startpos
@@ -311,7 +312,7 @@ impl VecEnv {
     /// continues. Returns the number of environments that panicked.
     ///
     /// This method contains no Python/PyO3 calls and can be tested from Rust.
-    fn apply_moves(&mut self, decoded_moves: &[Move]) -> usize {
+    fn apply_moves(&mut self, decoded_moves: &[Option<Move>]) -> usize {
         let num_envs = self.num_envs;
         let max_ply = self.max_ply;
         let obs_buf_len = self.obs_buffer_len;
@@ -319,6 +320,20 @@ impl VecEnv {
 
         let obs_tag = ObsModeTag::from(&self.obs_gen);
         let act_tag = ActionModeTag::from(&self.mapper);
+
+        // Paused lanes retain their game and observation state, but previous
+        // transition metadata must not appear as a new reward or episode end.
+        for (i, mv) in decoded_moves.iter().enumerate() {
+            if mv.is_none() {
+                self.reward_buffer[i] = 0.0;
+                self.terminated_buffer[i] = false;
+                self.truncated_buffer[i] = false;
+                self.captured_buffer[i] = 255;
+                self.term_reason_buffer[i] = TerminationReason::NotTerminated as u8;
+                self.ply_buffer[i] = self.games[i].ply as u16;
+                self.material_balance_buffer[i] = 0;
+            }
+        }
 
         // Extract raw pointers for non-overlapping parallel access.
         // SAFETY: each index `i` in 0..num_envs accesses only its own
@@ -348,6 +363,9 @@ impl VecEnv {
         let panic_count = AtomicU64::new(0);
 
         let process_env = |i: usize| {
+            let Some(mv) = decoded[i] else {
+                return;
+            };
             // In test builds, allow injecting a panic at a specific env index.
             #[cfg(test)]
             {
@@ -360,8 +378,6 @@ impl VecEnv {
             // SAFETY: each `i` accesses non-overlapping memory regions.
             unsafe {
                 let game = &mut *games_ptr.offset(i);
-                let mv = decoded[i];
-
                 // Apply move
                 let undo_info = game.make_move(mv);
 
@@ -655,6 +671,7 @@ impl VecEnv {
         for i in 0..self.num_envs {
             self.games[i] = GameState::with_max_ply(self.max_ply);
             self.move_histories[i].clear();
+            self.current_players_buffer[i] = 0;
         }
 
         // Write initial obs + legal masks for all games
@@ -679,12 +696,23 @@ impl VecEnv {
         })
     }
 
-    /// Step all environments with the given actions.
+    /// Step active environments with the given actions.
+    ///
+    /// `active_mask`, when supplied, must contain one bool per environment.
+    /// False lanes ignore their action and retain their game, observations,
+    /// legal masks, player and move history. They return reward=0 and no done
+    /// signal. Results always retain the full environment batch shape.
     ///
     /// Two-phase contract:
-    ///   Phase 1: Decode and validate all N actions (no state mutation).
-    ///   Phase 2: Apply all moves with GIL released.
-    pub fn step(&mut self, py: Python<'_>, actions: Vec<i64>) -> PyResult<StepResult> {
+    ///   Phase 1: Decode and validate all active actions (no state mutation).
+    ///   Phase 2: Apply active moves with GIL released.
+    #[pyo3(signature = (actions, active_mask=None))]
+    pub fn step(
+        &mut self,
+        py: Python<'_>,
+        actions: Vec<i64>,
+        active_mask: Option<Vec<bool>>,
+    ) -> PyResult<StepResult> {
         // --- Phase 1: Validate (read-only) ---
 
         if actions.len() != self.num_envs {
@@ -695,9 +723,24 @@ impl VecEnv {
             )));
         }
 
-        // Decode all actions and validate against legal masks
-        let mut decoded_moves: Vec<Move> = Vec::with_capacity(self.num_envs);
+        if let Some(mask) = &active_mask
+            && mask.len() != self.num_envs
+        {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "expected active_mask with {} entries, got {}",
+                self.num_envs,
+                mask.len()
+            )));
+        }
+
+        // Decode active actions and validate against legal masks. No metadata
+        // is cleared until every active action has passed validation.
+        let mut decoded_moves: Vec<Option<Move>> = Vec::with_capacity(self.num_envs);
         for (i, action) in actions.iter().enumerate() {
+            if active_mask.as_ref().is_some_and(|mask| !mask[i]) {
+                decoded_moves.push(None);
+                continue;
+            }
             if *action < 0 {
                 return Err(pyo3::exceptions::PyValueError::new_err(format!(
                     "env {}: negative action index {}",
@@ -723,13 +766,16 @@ impl VecEnv {
                 )));
             }
 
-            decoded_moves.push(mv);
+            decoded_moves.push(Some(mv));
         }
 
         // Record move notations before apply (single-threaded, before state mutation).
         // Uses legal_moves_cache populated during the previous step's mask generation,
         // avoiding a redundant generate_legal_moves_into call per environment.
         for (i, mv) in decoded_moves.iter().enumerate() {
+            let Some(mv) = mv else {
+                continue;
+            };
             let action_idx = actions[i] as usize;
             let notation = move_notation(*mv, &self.games[i].position, &self.legal_moves_cache[i]);
             let usi = move_usi(*mv);
@@ -1355,7 +1401,7 @@ mod tests {
             let action = env.mapper.encode(mate, Color::Black).unwrap();
             assert!(env.legal_mask_buffer[action]);
 
-            assert_eq!(env.apply_moves(&[mate]), 0);
+            assert_eq!(env.apply_moves(&[Some(mate)]), 0);
             assert!(env.terminated_buffer[0]);
             assert!(!env.truncated_buffer[0]);
             assert_eq!(env.reward_buffer[0], 1.0);
@@ -1930,12 +1976,66 @@ mod tests {
     }
 
     /// Helper: collect the first legal move for each env.
-    fn collect_first_legal_moves(env: &mut VecEnv) -> Vec<Move> {
+    fn collect_first_legal_moves(env: &mut VecEnv) -> Vec<Option<Move>> {
         let mut moves = Vec::with_capacity(env.num_envs);
         for i in 0..env.num_envs {
-            moves.push(first_legal_move(env, i));
+            moves.push(Some(first_legal_move(env, i)));
         }
         moves
+    }
+
+    #[test]
+    fn test_apply_moves_pauses_inactive_lane_and_clears_previous_transition() {
+        let _lock = TEST_PANIC_MUTEX.lock().unwrap();
+        for num_envs in [2, PARALLEL_THRESHOLD] {
+            let mut env = make_env(num_envs, 100);
+            let previous = first_legal_move(&mut env, 1);
+            env.games[1].make_move(previous);
+            for i in 0..num_envs {
+                env.write_obs_and_mask(i);
+            }
+            env.current_players_buffer[1] = 1;
+            env.reward_buffer[1] = 1.0;
+            env.terminated_buffer[1] = true;
+            env.truncated_buffer[1] = true;
+            env.captured_buffer[1] = 0;
+            env.term_reason_buffer[1] = TerminationReason::Checkmate as u8;
+            env.material_balance_buffer[1] = 9;
+            let sfen = env.games[1].position.to_sfen();
+            let obs = env.obs_buffer[env.obs_buffer_len..2 * env.obs_buffer_len].to_vec();
+            let mask = env.legal_mask_buffer[env.action_space..2 * env.action_space].to_vec();
+            let mut moves = vec![None; num_envs];
+            moves[0] = Some(first_legal_move(&mut env, 0));
+
+            // A paused lane must not run even its panic-injection hook.
+            TEST_PANIC_AT_ENV.store(1, Ordering::SeqCst);
+            let panicked = env.apply_moves(&moves);
+            TEST_PANIC_AT_ENV.store(usize::MAX, Ordering::SeqCst);
+
+            assert_eq!(panicked, 0);
+            assert_eq!(env.games[0].ply, 1);
+            assert_eq!(env.games[1].position.to_sfen(), sfen);
+            assert_eq!(env.current_players_buffer[1], 1);
+            assert_eq!(
+                &env.obs_buffer[env.obs_buffer_len..2 * env.obs_buffer_len],
+                obs
+            );
+            assert_eq!(
+                &env.legal_mask_buffer[env.action_space..2 * env.action_space],
+                mask
+            );
+            assert_eq!(env.reward_buffer[1], 0.0);
+            assert!(!env.terminated_buffer[1]);
+            assert!(!env.truncated_buffer[1]);
+            assert_eq!(env.captured_buffer[1], 255);
+            assert_eq!(
+                env.term_reason_buffer[1],
+                TerminationReason::NotTerminated as u8
+            );
+            assert_eq!(env.ply_buffer[1], 1);
+            assert_eq!(env.material_balance_buffer[1], 0);
+            assert_eq!(env.episodes_completed(), 0);
+        }
     }
 
     #[test]
