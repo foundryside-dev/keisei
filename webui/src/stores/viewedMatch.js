@@ -18,7 +18,7 @@ function orderedMoves(moves, gameId) {
 
 /** Read-only displayed-match adapter. It never mutates live-feed or URL stores. */
 export function createViewedMatch({ navigationStore, liveGameStore, liveMovesStore, fetchGame = (url, options) => fetch(url, options) }) {
-  const state = writable({ game: null, moves: [], displayedMove: null, selectedIndex: null, following: true, explicitMatch: false, archived: false, loading: false, error: '', status: '' })
+  const state = writable({ game: null, moves: [], displayedMove: null, selectedIndex: null, following: true, explicitMatch: false, archived: false, loading: false, error: '', canRetry: false, status: '' })
   let route = { view: 'training', matchId: null, ply: null, error: '' }
   let liveGame = null
   let liveMoves = []
@@ -73,7 +73,7 @@ export function createViewedMatch({ navigationStore, liveGameStore, liveMovesSto
     state.set({
       game, moves, displayedMove: error ? null : moves[following ? moves.length - 1 : selectedIndex] || null,
       selectedIndex, following, explicitMatch, archived: explicitMatch && !live,
-      loading: loading && !game, error, status,
+      loading: loading && !game, error, canRetry: !!requestError && !route.error && !live, status,
     })
   }
 

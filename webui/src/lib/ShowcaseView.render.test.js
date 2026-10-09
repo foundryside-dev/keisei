@@ -69,6 +69,46 @@ it('clamps Previous and Shift+Left at the first stored position without resuming
   expect(get(navigation).ply).toBe(1)
 })
 
+it('keeps following when Next or a forward shortcut is used at the live tail', async () => {
+  document.querySelector('[aria-label="Next ply"]').click(); await settle()
+  const region = document.querySelector('[aria-label="Replay keyboard controls"]')
+  key(region, 'ArrowRight'); key(region, 'ArrowRight', { shiftKey: true }); await settle()
+  expect(stateLabel()).toBe('Live')
+  expect(get(navigation)).toMatchObject({ matchId: null, ply: null })
+  showcaseMoves.set([move(1), move(2), move(3), move(4)]); await settle()
+  expect(document.querySelector('input[type="range"]').value).toBe('3')
+  button('Pause following').click(); await settle()
+  document.querySelector('[aria-label="Next ply"]').click(); await settle()
+  expect(stateLabel()).toBe('Paused at ply 4')
+})
+
+it.each(['draw', 'black_win', 'white_win', 'abandoned'])('does not claim a next turn for a %s match', async status => {
+  showcaseGame.set({ ...match(), status }); await settle()
+  const footer = document.querySelector('.footer-strip')
+  expect(footer.textContent).toContain(status.replaceAll('_', ' '))
+  expect(footer.textContent).toContain('Ply 3')
+  expect(footer.textContent).not.toContain('to move')
+})
+
+it('offers useful recovery without a no-op retry for a malformed route', async () => {
+  history.replaceState(null, '', '/?view=showcase&match=9&ply=bad')
+  window.dispatchEvent(new PopStateEvent('popstate')); await settle()
+  expect(document.querySelector('.notice[role="alert"]')).not.toBeNull()
+  expect(button('Retry saved match')).toBeUndefined()
+  expect(fetch).not.toHaveBeenCalled()
+  button('Watch latest match').click(); await settle()
+  expect(stateLabel()).toBe('Live')
+})
+
+it('keeps Retry available for saved-match request failures', async () => {
+  fetch.mockRejectedValueOnce(new Error('Connection failed'))
+  history.replaceState(null, '', '/?view=showcase&match=8')
+  window.dispatchEvent(new PopStateEvent('popstate')); await settle()
+  expect(button('Retry saved match')).toBeDefined()
+  button('Retry saved match').click(); await settle()
+  expect(stateLabel()).toBe('Replay · ply 3')
+})
+
 it('scopes keyboard shortcuts to the region and preserves native buttons, summaries and move-history navigation', async () => {
   const region = document.querySelector('[aria-label="Replay keyboard controls"]')
   const summary = region.querySelector('summary')

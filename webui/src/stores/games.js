@@ -3,15 +3,18 @@ import { leagueEntries } from './league.js'
 
 const gameRows = writable([])
 const selectedId = writable(null)
-export const laneAnnouncement = writable('')
+export const laneAnnouncement = writable({ message: '', revision: 0 })
+function announceLane(message) {
+  laneAnnouncement.update(previous => ({ message, revision: previous.revision + 1 }))
+}
 function reconcile(rows, requested, previous = []) {
   let selected = rows.find(g => g.game_id === requested)
   if (!selected) {
     selected = [...rows].sort((a, b) => Number(!!a.is_over) - Number(!!b.is_over) || a.game_id - b.game_id)[0]
-    if (requested != null) laneAnnouncement.set(selected ? `Lane ${requested + 1} is unavailable. Selected lane ${selected.game_id + 1}.` : 'No training lanes available.')
+    if (requested != null) announceLane(selected ? `Lane ${requested + 1} is unavailable. Selected lane ${selected.game_id + 1}.` : 'No training lanes available.')
   } else {
     const old = previous.find(g => g.game_id === requested)
-    if (old && ((old.is_over && !selected.is_over) || selected.ply < old.ply)) laneAnnouncement.set(`New game in lane ${requested + 1}`)
+    if (old && ((old.is_over && !selected.is_over) || selected.ply < old.ply)) announceLane(`New game in lane ${requested + 1}`)
   }
   selectedId.set(selected?.game_id ?? null)
 }

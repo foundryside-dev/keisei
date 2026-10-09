@@ -82,7 +82,10 @@
     const target = moves[Math.max(0, Math.min(index, moves.length - 1))]
     if (target) setReplayPly(target.ply, game.id)
   }
-  function step(delta) { if (moves.length) selectIndex(Math.max(0, Math.min(moves.length - 1, selectedMoveIdx + delta))) }
+  function step(delta) {
+    if (!moves.length || ($viewed.following && delta > 0)) return
+    selectIndex(Math.max(0, Math.min(moves.length - 1, selectedMoveIdx + delta)))
+  }
   function toggleFollowing() { if ($viewed.following) selectIndex(moves.length - 1); else selectIndex(-1) }
   function keydown(event) {
     const action = replayAction(event)
@@ -111,7 +114,7 @@
   {#if !$sidecarAlive}<p class="offline-banner" role="alert"><strong>Match engine is offline.</strong> Saved matches remain available. Start the sidecar to enable live matches.</p>{/if}
   <MatchControls collapsed={game != null} archived={$viewed.archived} />
   {#if $viewed.loading}<p class="notice" role="status">Loading saved match…</p>
-  {:else if $viewed.error}<div class="notice" role="alert"><p>{$viewed.error}</p><button on:click={viewed.retry}>Retry saved match</button><button on:click={watchLatestMatch}>Watch latest match</button></div>
+  {:else if $viewed.error}<div class="notice" role="alert"><p>{$viewed.error}</p>{#if $viewed.canRetry}<button on:click={viewed.retry}>Retry saved match</button>{/if}<button on:click={watchLatestMatch}>Watch latest match</button></div>
   {:else if game}
     <MatchScorecard {game} displayedMove={move} scrubbing={!$viewed.following} />
     <div class="viewer-toolbar">

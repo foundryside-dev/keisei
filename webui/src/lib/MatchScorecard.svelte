@@ -75,7 +75,7 @@
   {/each}
   <div class="footer-strip">
     {#if isFinished}<span class="result" role="status">{resultLabel}</span>{/if}
-    <span>Ply {viewedPly}{#if scrubbing} / latest {liveTotalPly}{/if} · {turn} to move</span>
+    <span>Ply {viewedPly}{#if scrubbing} / latest {liveTotalPly}{/if}{#if !isFinished} · {turn} to move{/if}</span>
     {#if h2h?.total > 0}<span>Black head-to-head: {h2h.w} wins, {h2h.l} losses, {h2h.d} draws</span>{/if}
   </div>
 </section>

@@ -96,3 +96,16 @@ it('shows a consistent empty viewer and selector when all lanes disappear', asyn
   expect(document.querySelector('.compact-games summary').textContent).toContain('Choose game (0) · No lane')
   expect(document.querySelectorAll('.thumbnail')).toHaveLength(0)
 })
+
+it('refreshes the live-region content for repeated replacements in the same lane', async () => {
+  games.set([{ ...trainingLane(0), ply: 50 }]); await tick()
+  games.set([{ ...trainingLane(0), ply: 0 }]); await tick()
+  const status = document.querySelector('#training-main > [role="status"]')
+  const first = status.firstElementChild
+  expect(status.textContent).toBe('New game in lane 1')
+  games.set([{ ...trainingLane(0), ply: 20 }]); await tick()
+  expect(status.firstElementChild).toBe(first)
+  games.set([{ ...trainingLane(0), ply: 0 }]); await tick()
+  expect(status.textContent).toBe('New game in lane 1')
+  expect(status.firstElementChild).not.toBe(first)
+})

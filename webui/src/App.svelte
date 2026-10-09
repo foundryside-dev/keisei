@@ -169,7 +169,7 @@
 
   {#if $activeTab === 'training'}
     <div id="training-main" class="main-content" role="tabpanel" tabindex="-1" aria-labelledby="tab-training">
-      <div class="sr-only" role="status">{$laneAnnouncement}</div>
+      <div class="sr-only" role="status">{#key $laneAnnouncement.revision}<span>{$laneAnnouncement.message}</span>{/key}</div>
       <div class="sr-only" role="status">{moveAnnouncement}</div>
       <div class="player-panel">
         <PlayerCard role="learner" name={learnerName} elo={learnerElo} detail={learnerDetail} stats={learnerStats} facts={learnerFacts} />

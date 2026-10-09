@@ -7,7 +7,7 @@ beforeEach(() => {
   games.set([])
   selectedGameId.set(0)
   leagueEntries.set([])
-  laneAnnouncement.set('')
+  laneAnnouncement.set({ message: '', revision: 0 })
 })
 
 describe('games store', () => {
@@ -105,7 +105,7 @@ describe('training lane custody', () => {
     games.set([{ game_id: 8 }, { game_id: 3, is_over: true }, { game_id: 5 }])
     expect(get(selectedGameId)).toBe(5)
     expect(get(selectedGame).game_id).toBe(5)
-    expect(get(laneAnnouncement)).toBe('Lane 18 is unavailable. Selected lane 6.')
+    expect(get(laneAnnouncement).message).toBe('Lane 18 is unavailable. Selected lane 6.')
   })
 
   it('chooses the lowest available finished lane if no active lane remains, then clears an empty set', () => {
@@ -116,7 +116,7 @@ describe('training lane custody', () => {
     games.set([])
     expect(get(selectedGameId)).toBeNull()
     expect(get(selectedGame)).toBeNull()
-    expect(get(laneAnnouncement)).toBe('No training lanes available.')
+    expect(get(laneAnnouncement).message).toBe('No training lanes available.')
   })
 
   it('advances a replacement game in the same lane with a concise status', () => {
@@ -125,6 +125,6 @@ describe('training lane custody', () => {
     games.set([{ game_id: 17, ply: 1, is_over: false }])
     expect(get(selectedGameId)).toBe(17)
     expect(get(selectedGame).ply).toBe(1)
-    expect(get(laneAnnouncement)).toBe('New game in lane 18')
+    expect(get(laneAnnouncement).message).toBe('New game in lane 18')
   })
 })
