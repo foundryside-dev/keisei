@@ -35,18 +35,79 @@ with follow-up `keisei-ebe3c4bef2`.
   ply 12 while the scrubber's maximum advances to ply 13.
 - After an actual new match starts, latest-feed resume follows match 4; an
   explicit saved-match resume retains match 3 and its completed ply 13.
+- Real browser Back to the same match clears temporary latest-feed intent;
+  explicit identity survives a subsequent actual rollover. Resume after a rollover
+  while paused catches up to the new latest match.
 - A malformed URL has exactly one route-error alert and a working recovery action.
 - Filtered disclosure has accurate expansion state and avoids a no-op Hide
   control. Manual Show/Hide works for all players. At 390x844 in the light theme,
   records remain visible with no horizontal document overflow.
+- After the final focus repair, the real WebSocket empty-data transition leaves
+  focus on the player filter (SELECT), instead of BODY as reproduced before it.
+- Re-ran all 14 checks in the historical `keisei-ux-flows-2.js` browser script
+  against the final build, including archive reload, 51 complete evaluation
+  epochs / 255 rows, entry Close / Escape and browser Back focus restoration.
 - Browser oracles and machine-readable results: [evidence/fable-results.json](evidence/fable-results.json).
 - Screenshots: [paused clamp](evidence/fable-paused-clamp.png),
   [invalid-link recovery](evidence/fable-invalid-link.png),
   [filtered desktop](evidence/fable-filtered-matchups-desktop.png),
   [filtered phone](evidence/fable-filtered-matchups-phone.png).
 
-Bounded Claude repair re-review is pending. No Python or Rust implementation
-changed; hosted integration CI will run on the repair PR.
+The bounded Claude re-review **accepted** all five repairs and the SQLite
+rejection, with no material new defect. It completed successfully as
+`claude-fable-5-1`, high effort, session
+`a3487536-0b73-422d-8610-537d6cbf3339`, with no permission denials. It also used
+its native advisor. Full report follows below.
+
+Follow-up details: refreshed the older browser oracle's clamp wording; strengthened
+the clamp test to cover the originally requested ply actually becoming available;
+and reproduced the reviewer's minor focus concern in Chromium (active element
+became BODY after live matchup data emptied). The final focus repair moves focus
+to the player filter before disabling the previously focused list toggle. Focus
+checks only run when that toggle owns focus, so unrelated live updates do not
+move it. Final validation and hosted integration CI are recorded in PR #76.
+
+## Bounded Claude re-review
+
+**Verdict: accept.** Nothing in the repair diff blocks. All five confirmed defects are fixed in the current checkout, the SQLite rejection is correct, and I found no material new defect. Everything below is static inference from source and tests. I ran nothing. The 463-test, build, Ruff, mypy, and PRAGMA results are parent-reported, and the browser checks are someone else's.
+
+## Per-finding disposition
+
+**1. Latest-feed pause pins identity: fixed.**
+- The flag is set only from a non-explicit route at `webui/src/lib/ShowcaseView.svelte:91` and consumed at line 95, so resume sends a null match ID when the pause originated on the latest feed.
+- Every resume affordance funnels through `selectIndex(-1)`: Resume/Space via `toggleFollowing` at line 105, End key at line 112, the tail button at line 155, and the move log's return button at line 171 through `MoveLog.svelte:89`.
+- External navigation resets the flag through the subscription at lines 34 to 36. Popstate goes through `readHistory` at `webui/src/stores/navigation.js:91`, which publishes even for the same match ID, so history navigation to the same match retains explicit identity. Local scrubs are shielded by `selectingPosition`, which is set before the synchronous store write at line 97.
+- A scrub after a latest-feed pause is already explicit, so line 91 neither sets nor clears the flag. That is the intended behavior.
+- Tests at `ShowcaseView.render.test.js:163`, `:175`, and `:190` cover all five controls, explicit retention via popstate, and resume after rollover while paused.
+
+**2. Future ply drifts while labelled paused: fixed.**
+- The clamp resolves once at `webui/src/stores/viewedMatch.js:62` to `:66` and later publishes reuse `clampedPly` at line 59, so the board stays at the clamped ply across live appends with `following` still false at line 57.
+- The clamp resets on any match, ply, or view change at line 127, so a fresh link retries. Test at `viewedMatch.test.js:127`.
+- Non-blocking design note: once clamped, the originally requested ply is never retried even after it is played. A shared link to ply 50 opened at ply 30 stays at 30 permanently. That matches the stated plan, but it is a real change for the sharing case and is untested in that form. The one-line alternative is to try `route.ply` first and fall back to `clampedPly`. Your call.
+
+**3. SQLite busy timeout: rejected, correctly.**
+- The original finding's premise was wrong, not just unproven. Python's `sqlite3.connect` default `timeout=5.0` installs a 5000 ms busy handler on every connection, so the explicit pragma at `keisei/db/_connection.py:11` is redundant with the default. The raw connections at `keisei/db/gauntlet.py:35` and `keisei/db/showcase.py:308` were never inconsistent with the helper. The same applies to the raw connect at `keisei/server/app.py:107`.
+- Any WAL-recovery window that bypasses the busy handler would affect the helper's readers identically, so no differential risk remains. Executed PRAGMA evidence is parent-reported.
+
+**4. Pause downloads the populated live archive: fixed.**
+- The skip at `viewedMatch.js:95` publishes without fetching when the route matches the live game and its moves are present. The identity-change refresh at line 140 still fetches once the feed moves on.
+- The skip depends on the WebSocket move list being complete. That holds by server design: init sends all moves at `keisei/server/app.py:350`, updates are contiguous from the sent cursor at lines 640 to 646, the cursor resets to zero on game change at line 635, and `webui/src/lib/ws.js:225` replaces rather than merges on game change. The guard at `viewedMatch.js:36` handles the transient window between the game store and the moves store updating.
+- Covered by the component test at `ShowcaseView.render.test.js:185`. There is no direct unit test of the skip in `viewedMatch.test.js`. Minor gap.
+
+**5. Malformed showcase link announced twice: fixed.**
+- The root alert is suppressed for the showcase tab at `webui/src/App.svelte:168`. The showcase alert at `ShowcaseView.svelte:133` is the only remaining renderer of the route error in that view, and it keeps the Watch latest match button. Test at `App.render.test.js:113`.
+
+**6. Matchup toggle misreports expansion: fixed.**
+- Shared state at `webui/src/lib/MatchupMatrix.svelte:8` to `:9` drives `aria-expanded`, `disabled`, and the label at lines 147 to 148 and the panel class at line 150. The disabled toggle reads "Showing matchup record list", so Hide can no longer be a no-op. Test at `MatchupMatrix.render.test.js:41`.
+- Nit, non-blocking: if the toggle holds focus when head-to-head data empties, disabling drops focus to the body. Rare, out of scope.
+
+## Adjacent items worth knowing
+
+- **Stale browser-evidence assertion.** The earlier acceptance script at `docs/reviews/web-ux-remediation/evidence/keisei-ux-flows-2.js:14` waits for the old text "Ply 999 is outside this match". The store now emits "was outside the available range" at `viewedMatch.js:69`. Re-running that script against the repaired build will fail on that step. The newer evidence file `fable-results.json:33` already uses the new wording. Not run by me.
+- **Test count arithmetic is consistent.** The diff adds 11 tests, which matches the parent-reported 452 to 463.
+- **Screen-reader validation** remains the user-accepted Unable to test item. No change in this diff affects that status.
+
+No tracker state, files, commands, or external services were touched.
 
 ## Original Claude report
 

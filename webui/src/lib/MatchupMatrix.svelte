@@ -5,8 +5,11 @@
 
   let selectedPlayer = ''
   let showRecordList = false
+  let playerFilter
+  let recordToggle
   $: automaticRecordList = selectedPlayer !== '' || !hasAnyRecords
   $: recordListExpanded = showRecordList || automaticRecordList
+  $: if (automaticRecordList && typeof document !== 'undefined' && document.activeElement === recordToggle) playerFilter?.focus()
 
   /** Current learner display_name — used to build an aggregate "Trainer" row */
   export let learnerName = null
@@ -137,14 +140,14 @@
   <h2 class="section-header">Head-to-Head</h2>
 
   <label class="player-filter">Player
-    <select bind:value={selectedPlayer}>
+    <select bind:this={playerFilter} bind:value={selectedPlayer}>
       <option value="">All players</option>
       {#each participants.filter(p => !p.isPlaceholder) as player}
         <option value={String(player.id)}>{matchupIdentity(player)}</option>
       {/each}
     </select>
   </label>
-  <button class="list-toggle" aria-expanded={recordListExpanded} disabled={automaticRecordList} aria-controls="matchup-records" on:click={() => showRecordList = !showRecordList}>
+  <button bind:this={recordToggle} class="list-toggle" aria-expanded={recordListExpanded} disabled={automaticRecordList} aria-controls="matchup-records" on:click={() => showRecordList = !showRecordList}>
     {automaticRecordList ? 'Showing' : recordListExpanded ? 'Hide' : 'Show'} matchup record list
   </button>
   <div id="matchup-records" class="h2h-list-view" class:expanded={recordListExpanded}>

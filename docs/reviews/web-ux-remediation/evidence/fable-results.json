@@ -65,5 +65,39 @@
       "documentWidth": 390,
       "theme": "light"
     }
-  }
+  },
+  "check_5": {
+    "afterSameMatchBackAndResume": "http://127.0.0.1:8768/?view=showcase&match=4",
+    "state": "Live"
+  },
+  "check_6": {
+    "explicitIdentityAfterRollover": 4,
+    "pausedLatestBeforeNextRollover": "http://127.0.0.1:8768/?view=showcase&match=5&ply=12"
+  },
+  "check_7": {
+    "state": "Live",
+    "viewerUrl": "http://127.0.0.1:8768/?view=showcase",
+    "copied": "http://127.0.0.1:8768/?view=showcase&match=6&ply=12"
+  },
+  "check_8": {
+    "focusedFilter": true,
+    "activeTag": "SELECT",
+    "recordsEmpty": "No matchup data yet."
+  },
+  "historical_flow_rerun": [
+    "Malformed estimate is unavailable in archived replay",
+    "Archived playback speed is disabled",
+    "Production saved-match root query reload preserves actualply",
+    "Legacy estimates unavailable",
+    "Out-of-range storedply explains clamp",
+    "Missing saved match offers recovery",
+    "Missing-match recovery follows latest",
+    "Filter exposes stable ID and perspective",
+    "Real API reaches51completeepochs/255slots beyond live50",
+    "Entry opening creates shareable URL",
+    "Native Space close restores originating row",
+    "Explicit entry Escape restores row",
+    "Browser Back restores entry detail",
+    "Back-opened entry with no initiating control uses heading fallback"
+  ]
 }

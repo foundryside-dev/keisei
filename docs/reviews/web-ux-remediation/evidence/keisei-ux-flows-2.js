@@ -11,7 +11,7 @@ async (page) => {
   await page.getByText('Replay · ply 2',{exact:true}).waitFor()
   check((await page.locator('.commentary').innerText()).includes('Estimate unavailable'),'Legacy estimates unavailable')
   await page.goto('http://127.0.0.1:8765/?view=showcase&match=1&ply=999')
-  await page.getByText(/Ply 999 is outside this match/).waitFor();checks.push('Out-of-range storedply explains clamp')
+  await page.getByText(/Ply 999 was outside the available range/).waitFor();checks.push('Out-of-range storedply explains clamp')
   await page.goto('http://127.0.0.1:8765/?view=showcase&match=999999')
   await page.getByText(/Match 999999 is unavailable/).waitFor();checks.push('Missing saved match offers recovery')
   await page.getByRole('button',{name:'Watch latest match',exact:true}).click()
