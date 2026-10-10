@@ -28,6 +28,7 @@ export function createViewedMatch({ navigationStore, liveGameStore, liveMovesSto
   let controller = null
   let generation = 0
   let destroyed = false
+  let clampedPly = null
 
   function matchingLive() {
     return liveGame && Number(liveGame.id) === route.matchId
@@ -55,13 +56,17 @@ export function createViewedMatch({ navigationStore, liveGameStore, liveMovesSto
     let selectedIndex = null
     const following = route.ply == null
     if (!error && route.ply != null && moves.length) {
-      selectedIndex = moves.findIndex(move => move.ply === route.ply)
+      const requestedPly = clampedPly ?? route.ply
+      selectedIndex = moves.findIndex(move => move.ply === requestedPly)
       if (selectedIndex < 0) {
-        if (route.ply < moves[0].ply || route.ply > moves[moves.length - 1].ply) {
-          selectedIndex = route.ply < moves[0].ply ? 0 : moves.length - 1
-          status = `Ply ${route.ply} is outside this match. Showing stored ply ${moves[selectedIndex].ply}.`
+        if (requestedPly < moves[0].ply || requestedPly > moves[moves.length - 1].ply) {
+          selectedIndex = requestedPly < moves[0].ply ? 0 : moves.length - 1
+          // Resolve an out-of-range link once. A paused board must not drift
+          // toward a future requested ply as the live match grows.
+          clampedPly = moves[selectedIndex].ply
         } else error = `Ply ${route.ply} is not stored for this match. Choose another position or the latest move.`
       }
+      if (clampedPly != null) status = `Ply ${route.ply} was outside the available range. Showing stored ply ${clampedPly}.`
     } else if (!error && route.ply != null && game && !loading) {
       error = `Ply ${route.ply} is not stored for this match. No moves are available yet.`
     }
@@ -85,6 +90,9 @@ export function createViewedMatch({ navigationStore, liveGameStore, liveMovesSto
     requestError = ''
     const id = route.matchId
     if (route.view !== 'showcase' || id == null || route.error || destroyed) { publish(); return }
+    // The WebSocket installs the complete current-game move history. Local
+    // scrubbing can use it without downloading the same boards and heatmaps.
+    if (matchingLive() && movesForLiveGame().length) { publish(); return }
     loading = true
     controller = new AbortController()
     publish()
@@ -116,6 +124,7 @@ export function createViewedMatch({ navigationStore, liveGameStore, liveMovesSto
     navigationStore.subscribe(next => {
       const identityChanged = next.matchId !== route.matchId || next.view !== route.view || next.error !== route.error
       const previousId = route.matchId
+      if (next.matchId !== route.matchId || next.ply !== route.ply || next.view !== route.view) clampedPly = null
       route = next
       if (previousId !== route.matchId) cached = null
       captureLive()

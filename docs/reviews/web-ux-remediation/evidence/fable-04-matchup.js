@@ -1,0 +1,25 @@
+async (page) => {
+  const check = (condition, message) => { if (!condition) throw new Error(message) }
+  await page.goto('http://127.0.0.1:8768/?view=league')
+  const filter = page.locator('.player-filter select')
+  await filter.locator('option[value="2"]').waitFor({ state: 'attached' })
+  await filter.selectOption('2')
+  const toggle = page.locator('.list-toggle')
+  check(await toggle.getAttribute('aria-expanded') === 'true' && await toggle.isDisabled(), 'Filtered disclosure state is inaccurate')
+  check(await page.locator('#matchup-records').isVisible(), 'Filtered records hidden')
+  await page.screenshot({ path: '/tmp/keisei-ux-fable-fixes/docs/reviews/web-ux-remediation/evidence/fable-filtered-matchups-desktop.png', fullPage: true })
+  await filter.selectOption('')
+  check(await toggle.isEnabled() && await toggle.getAttribute('aria-expanded') === 'false', 'Unfiltered toggle did not reset')
+  await toggle.click()
+  check(await toggle.getAttribute('aria-expanded') === 'true' && await page.locator('#matchup-records').isVisible(), 'Show records failed')
+  await toggle.click()
+  check(await toggle.getAttribute('aria-expanded') === 'false' && !await page.locator('#matchup-records').isVisible(), 'Hide records failed')
+  await filter.selectOption('2')
+  await page.getByRole('button', { name: 'Toggle light theme', exact: true }).click()
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.screenshot({ path: '/tmp/keisei-ux-fable-fixes/docs/reviews/web-ux-remediation/evidence/fable-filtered-matchups-phone.png', fullPage: true })
+  const phone = await page.evaluate(() => ({ width: innerWidth, documentWidth: document.documentElement.scrollWidth, theme: document.documentElement.dataset.theme }))
+  check(phone.documentWidth <= phone.width, 'Phone page overflows horizontally')
+  check(await page.locator('#matchup-records').isVisible() && !await toggle.isVisible(), 'Phone records or disclosure visibility changed')
+  return { filteredExpanded: true, disabledAutomaticToggle: true, manualShowHide: 'passed', phone }
+}

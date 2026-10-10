@@ -159,3 +159,40 @@ it('disables playback-speed commands while viewing an archived match', async () 
   const { sendShowcaseCommand } = await import('./ws.js')
   expect(sendShowcaseCommand).not.toHaveBeenCalled()
 })
+
+it.each(['Resume following', 'Live', '← Live', 'End', 'Space'])('restores the latest feed through %s after pausing and follows the next match', async control => {
+  button('Pause following').click(); await settle()
+  if (control === 'End' || control === 'Space') key(document.querySelector('[aria-label="Replay keyboard controls"]'), control === 'Space' ? ' ' : 'End')
+  else button(control).click()
+  await settle()
+  expect(get(navigation)).toMatchObject({ matchId: null, ply: null })
+  showcaseGame.set({ ...match(), id: 10 }); showcaseMoves.set([{ ...move(1), game_id: 10 }]); await settle()
+  expect(stateLabel()).toBe('Live')
+  button('Copy link to this position').click(); await settle()
+  expect(new URL(navigator.clipboard.writeText.mock.calls.at(-1)[0]).searchParams.get('match')).toBe('10')
+})
+
+it('keeps an explicit match on resume, including history navigation to the same match after a latest-feed pause', async () => {
+  button('Pause following').click(); await settle()
+  history.replaceState(null, '', '/?view=showcase&match=9&ply=2')
+  window.dispatchEvent(new PopStateEvent('popstate')); await settle()
+  button('Resume following').click(); await settle()
+  expect(get(navigation)).toMatchObject({ matchId: 9, ply: null })
+  showcaseGame.set({ ...match(), id: 10 }); showcaseMoves.set([{ ...move(1), game_id: 10 }]); await settle()
+  expect(stateLabel()).toBe('Replay · ply 3')
+})
+
+it('pauses a populated live match without downloading its archive', async () => {
+  button('Pause following').click(); await settle()
+  expect(fetch).not.toHaveBeenCalled()
+})
+
+it('resumes the latest feed after the match changes while paused', async () => {
+  button('Pause following').click(); await settle()
+  showcaseGame.set({ ...match(), id: 10 }); showcaseMoves.set([{ ...move(1), game_id: 10 }]); await settle()
+  expect(stateLabel()).toBe('Replay · ply 3')
+  button('Resume following').click(); await settle()
+  expect(get(navigation)).toMatchObject({ matchId: null, ply: null })
+  expect(stateLabel()).toBe('Live')
+  expect(document.querySelector('input[type="range"]').value).toBe('0')
+})

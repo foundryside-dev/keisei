@@ -1,0 +1,103 @@
+{
+  "check_1": {
+    "resumes": [
+      {
+        "control": "Resume following",
+        "url": "http://127.0.0.1:8768/?view=showcase",
+        "state": "Live"
+      },
+      {
+        "control": "Live",
+        "url": "http://127.0.0.1:8768/?view=showcase",
+        "state": "Live"
+      },
+      {
+        "control": "Move log",
+        "url": "http://127.0.0.1:8768/?view=showcase",
+        "state": "Live"
+      },
+      {
+        "control": "End",
+        "url": "http://127.0.0.1:8768/?view=showcase",
+        "state": "Live"
+      },
+      {
+        "control": "Space",
+        "url": "http://127.0.0.1:8768/?view=showcase",
+        "state": "Live"
+      }
+    ],
+    "archiveRequests": [],
+    "futurePly": {
+      "state": "Paused at ply 12",
+      "status": "Ply 9999 was outside the available range. Showing stored ply 12."
+    }
+  },
+  "check_2": {
+    "afterActualAppend": {
+      "state": "Paused at ply 12",
+      "range": {
+        "value": "11",
+        "max": "12"
+      }
+    },
+    "readyForNewMatch": "http://127.0.0.1:8768/?view=showcase"
+  },
+  "check_3": {
+    "rollover": {
+      "state": "Live",
+      "copied": "http://127.0.0.1:8768/?view=showcase&match=4&ply=12",
+      "viewerUrl": "http://127.0.0.1:8768/?view=showcase"
+    },
+    "explicitResume": {
+      "state": "Replay \u00b7 ply 13",
+      "url": "http://127.0.0.1:8768/?view=showcase&match=3"
+    },
+    "malformedAlertCount": 1,
+    "recoveryState": "Live"
+  },
+  "check_4": {
+    "filteredExpanded": true,
+    "disabledAutomaticToggle": true,
+    "manualShowHide": "passed",
+    "phone": {
+      "width": 390,
+      "documentWidth": 390,
+      "theme": "light"
+    }
+  },
+  "check_5": {
+    "afterSameMatchBackAndResume": "http://127.0.0.1:8768/?view=showcase&match=4",
+    "state": "Live"
+  },
+  "check_6": {
+    "explicitIdentityAfterRollover": 4,
+    "pausedLatestBeforeNextRollover": "http://127.0.0.1:8768/?view=showcase&match=5&ply=12"
+  },
+  "check_7": {
+    "state": "Live",
+    "viewerUrl": "http://127.0.0.1:8768/?view=showcase",
+    "copied": "http://127.0.0.1:8768/?view=showcase&match=6&ply=12"
+  },
+  "check_8": {
+    "focusedFilter": true,
+    "activeTag": "SELECT",
+    "recordsEmpty": "No matchup data yet."
+  },
+  "historical_flow_rerun": [
+    "Malformed estimate is unavailable in archived replay",
+    "Archived playback speed is disabled",
+    "Production saved-match root query reload preserves actualply",
+    "Legacy estimates unavailable",
+    "Out-of-range storedply explains clamp",
+    "Missing saved match offers recovery",
+    "Missing-match recovery follows latest",
+    "Filter exposes stable ID and perspective",
+    "Real API reaches51completeepochs/255slots beyond live50",
+    "Entry opening creates shareable URL",
+    "Native Space close restores originating row",
+    "Explicit entry Escape restores row",
+    "Browser Back restores entry detail",
+    "Back-opened entry with no initiating control uses heading fallback"
+  ]
+}

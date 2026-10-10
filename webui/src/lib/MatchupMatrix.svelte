@@ -5,6 +5,11 @@
 
   let selectedPlayer = ''
   let showRecordList = false
+  let playerFilter
+  let recordToggle
+  $: automaticRecordList = selectedPlayer !== '' || !hasAnyRecords
+  $: recordListExpanded = showRecordList || automaticRecordList
+  $: if (automaticRecordList && typeof document !== 'undefined' && document.activeElement === recordToggle) playerFilter?.focus()
 
   /** Current learner display_name — used to build an aggregate "Trainer" row */
   export let learnerName = null
@@ -135,17 +140,17 @@
   <h2 class="section-header">Head-to-Head</h2>
 
   <label class="player-filter">Player
-    <select bind:value={selectedPlayer}>
+    <select bind:this={playerFilter} bind:value={selectedPlayer}>
       <option value="">All players</option>
       {#each participants.filter(p => !p.isPlaceholder) as player}
         <option value={String(player.id)}>{matchupIdentity(player)}</option>
       {/each}
     </select>
   </label>
-  <button class="list-toggle" aria-expanded={showRecordList} aria-controls="matchup-records" on:click={() => showRecordList = !showRecordList}>
-    {showRecordList ? 'Hide' : 'Show'} matchup record list
+  <button bind:this={recordToggle} class="list-toggle" aria-expanded={recordListExpanded} disabled={automaticRecordList} aria-controls="matchup-records" on:click={() => showRecordList = !showRecordList}>
+    {automaticRecordList ? 'Showing' : recordListExpanded ? 'Hide' : 'Show'} matchup record list
   </button>
-  <div id="matchup-records" class="h2h-list-view" class:expanded={showRecordList || selectedPlayer !== '' || !hasAnyRecords}>
+  <div id="matchup-records" class="h2h-list-view" class:expanded={recordListExpanded}>
     {#if !hasAnyRecords}
       <p class="empty">No matchup data yet.</p>
     {:else if rows.length === 0}
@@ -426,6 +431,7 @@
   .player-filter { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; font-size: 13px; }
   select { min-height: 44px; min-width: 0; width: 100%; color: var(--text-primary); background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px; padding: 8px; }
   .list-toggle { align-self: flex-start; min-height: 44px; margin-bottom: 8px; padding: 8px 12px; color: var(--text-primary); background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
+  .list-toggle:disabled { cursor: default; }
   .h2h-list-view.expanded { display: flex; flex: none; max-height: 48vh; }
   .matrix-desktop.filtered { display: none; }
   .record-list { padding: 0; margin: 0; list-style: none; }

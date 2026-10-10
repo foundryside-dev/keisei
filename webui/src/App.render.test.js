@@ -109,3 +109,11 @@ it('refreshes the live-region content for repeated replacements in the same lane
   expect(status.textContent).toBe('New game in lane 1')
   expect(status.firstElementChild).not.toBe(first)
 })
+
+it('announces malformed showcase links once and preserves recovery controls', async () => {
+  history.replaceState(null, '', '/?view=showcase&match=bad')
+  window.dispatchEvent(new PopStateEvent('popstate')); await tick(); await tick()
+  const errors = [...document.querySelectorAll('[role="alert"]')].filter(node => node.textContent.includes('invalid match'))
+  expect(errors).toHaveLength(1)
+  expect([...errors[0].querySelectorAll('button')].some(node => node.textContent === 'Watch latest match')).toBe(true)
+})
