@@ -27,6 +27,14 @@
   let contentElement
   let boardElement
   let boardSize = null
+  let resumeLatestForMatch = null
+  let selectingPosition = false
+  // A local pause pins a position for sharing, but resume must restore the
+  // original latest-feed intent. External navigation establishes fresh intent.
+  const unsubscribeNavigation = navigation.subscribe(() => {
+    if (!selectingPosition) resumeLatestForMatch = null
+  })
+  onDestroy(unsubscribeNavigation)
   function fitBoard(node) {
     boardElement = node
     contentElement = node.parentElement
@@ -78,9 +86,17 @@
   }
   function selectIndex(index) {
     if (!game) return
-    if (index < 0) { setReplayPly(null, $viewed.explicitMatch ? game.id : null); return }
     const target = moves[Math.max(0, Math.min(index, moves.length - 1))]
-    if (target) setReplayPly(target.ply, game.id)
+    if (index >= 0 && !target) return
+    if (index >= 0 && !$viewed.explicitMatch) resumeLatestForMatch = game.id
+    selectingPosition = true
+    try {
+      if (index < 0) {
+        const matchId = resumeLatestForMatch === game.id ? null : $viewed.explicitMatch ? game.id : null
+        resumeLatestForMatch = null
+        setReplayPly(null, matchId)
+      } else setReplayPly(target.ply, game.id)
+    } finally { selectingPosition = false }
   }
   function step(delta) {
     if (!moves.length || ($viewed.following && delta > 0)) return

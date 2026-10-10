@@ -165,7 +165,7 @@
   <a href={`#${$activeTab}-main`} class="skip-nav">Skip to content</a>
   <audio bind:this={audioEl} src="/audio/lofi.opus" loop preload="none"></audio>
   <StatusIndicator />
-  {#if $navigation.error}<p class="navigation-error" role="alert">{$navigation.error}</p>{/if}
+  {#if $navigation.error && $activeTab !== 'showcase'}<p class="navigation-error" role="alert">{$navigation.error}</p>{/if}
 
   {#if $activeTab === 'training'}
     <div id="training-main" class="main-content" role="tabpanel" tabindex="-1" aria-labelledby="tab-training">

@@ -123,3 +123,16 @@ describe('viewed match identity and positions', () => {
     expect(get(s.adapter).game).toBeNull()
   })
 })
+
+it('clamps an unplayed ply once and keeps the paused position stable across live appends', async () => {
+  const s = setup(route(1, 99), vi.fn().mockResolvedValue(response(1, [1, 2, 3], 'in_progress')))
+  await flush()
+  s.liveGameStore.set(game(1)); s.liveMovesStore.set(moves(1, [1, 2, 3]))
+  expect(get(s.adapter)).toMatchObject({ following: false, displayedMove: { ply: 3 } })
+  s.liveMovesStore.set(moves(1, [1, 2, 3, 4]))
+  expect(get(s.adapter)).toMatchObject({ following: false, displayedMove: { ply: 3 }, status: expect.stringContaining('stored ply 3') })
+  s.navigationStore.set(route(1, 100))
+  expect(get(s.adapter).displayedMove.ply).toBe(4)
+  s.navigationStore.set(route(1))
+  expect(get(s.adapter)).toMatchObject({ following: true, displayedMove: { ply: 4 } })
+})

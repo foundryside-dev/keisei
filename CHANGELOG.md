@@ -28,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   silently dropping work.
 
 ### Fixed
+- **Following and replay recovery** — resuming a pause from the latest match feed
+  follows subsequent matches; explicit saved-match links retain their identity.
+  Out-of-range positions stay pinned, live scrubbing avoids redundant archive
+  downloads, invalid links announce once, and matchup disclosure state is accurate.
 - **Spectator layout and replay** — prioritize the selected Training board,
   expose all lanes, fit Watch match boards to their containers, and keep paused
   positions pinned even at the latest move. Native controls retain Space behavior.
